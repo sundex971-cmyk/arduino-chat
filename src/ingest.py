@@ -5,14 +5,25 @@ from typing import Any
 
 try:
     from .chunking import split_text
+    from .config import (
+        COLLECTION_EMBEDDING_MODEL_KEY,
+        COLLECTION_NAME,
+        DATA_DIR,
+        EMBEDDING_MODEL,
+        PROJECT_ROOT,
+        VECTOR_DB_DIR,
+    )
 except ImportError:
     from chunking import split_text
+    from config import (
+        COLLECTION_EMBEDDING_MODEL_KEY,
+        COLLECTION_NAME,
+        DATA_DIR,
+        EMBEDDING_MODEL,
+        PROJECT_ROOT,
+        VECTOR_DB_DIR,
+    )
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = PROJECT_ROOT / "data" / "docs"
-VECTOR_DB_DIR = PROJECT_ROOT / "vector_db"
-COLLECTION_NAME = "arduino_docs"
-EMBEDDING_MODEL = "qwen3-embedding:8b"
 CHUNK_SIZE = 800
 CHUNK_OVERLAP = 150
 
@@ -46,7 +57,27 @@ def create_collection() -> Any:
         path=str(VECTOR_DB_DIR),
         settings=Settings(anonymized_telemetry=False),
     )
-    return client.get_or_create_collection(name=COLLECTION_NAME)
+    collection = client.get_or_create_collection(
+        name=COLLECTION_NAME,
+        metadata={COLLECTION_EMBEDDING_MODEL_KEY: EMBEDDING_MODEL},
+    )
+
+    metadata = collection.metadata or {}
+    indexed_model = metadata.get(COLLECTION_EMBEDDING_MODEL_KEY)
+    if indexed_model and indexed_model != EMBEDDING_MODEL:
+        raise SystemExit(
+            "Embedding model mismatch: "
+            f"existing collection uses {indexed_model!r}, "
+            f"but ingestion is configured for {EMBEDDING_MODEL!r}. "
+            "Delete/rebuild vector_db or use the original embedding model."
+        )
+
+    if not indexed_model:
+        collection.modify(
+            metadata={COLLECTION_EMBEDDING_MODEL_KEY: EMBEDDING_MODEL}
+        )
+
+    return collection
 
 
 def process_file(file_path: Path, collection: Any, embeddings: Any) -> int:

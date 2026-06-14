@@ -28,6 +28,18 @@ class DocumentSource:
 
 SOURCES = [
     DocumentSource(
+        "language-reference",
+        f"{BASE_URL}/language/functions/analog-io/analogwrite/",
+        REFERENCE_RAW,
+        "Language/Functions/Analog IO/analogWrite.adoc",
+    ),
+    DocumentSource(
+        "language-reference",
+        f"{BASE_URL}/language/functions/analog-io/analogread/",
+        REFERENCE_RAW,
+        "Language/Functions/Analog IO/analogRead.adoc",
+    ),
+    DocumentSource(
         "getting-started",
         f"{BASE_URL}/learn/starting-guide/getting-started-arduino/",
         DOCS_CONTENT_RAW,

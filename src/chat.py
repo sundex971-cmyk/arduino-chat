@@ -7,36 +7,73 @@ Uses ChromaDB for vector search and Ollama/LangChain for LLM capabilities.
 from __future__ import annotations
 
 import sys
-from pathlib import Path
-from typing import Any, Optional
+import os
+from typing import Any
 
-# Configuration
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-VECTOR_DB_DIR = PROJECT_ROOT / "vector_db"
-DATA_DIR = PROJECT_ROOT / "data" / "docs"
-COLLECTION_NAME = "arduino_docs"
-EMBEDDING_MODEL = "qwen3-embedding:0.6b"
-LLM_MODEL = "qwen3.5:2b"
+try:
+    from .config import (
+        COLLECTION_EMBEDDING_MODEL_KEY,
+        COLLECTION_NAME,
+        EMBEDDING_MODEL,
+        LLM_MODEL,
+        OLLAMA_BASE_URL,
+        PROJECT_ROOT,
+        VECTOR_DB_DIR,
+    )
+except ImportError:
+    from config import (
+        COLLECTION_EMBEDDING_MODEL_KEY,
+        COLLECTION_NAME,
+        EMBEDDING_MODEL,
+        LLM_MODEL,
+        OLLAMA_BASE_URL,
+        PROJECT_ROOT,
+        VECTOR_DB_DIR,
+    )
 
 # Constants
-CONTEXT_WINDOW_SIZE = 1
+CONTEXT_WINDOW_SIZE = 3
 DEFAULT_TIMEOUT = 30
-OLLAMA_BASE_URL = "http://localhost:11434"
+DEBUG = os.getenv("ARDUINO_CHAT_DEBUG", "").lower() in {"1", "true", "yes", "on"}
+MIN_CONTEXT_CHARS = 120
 
-SYSTEM_PROMPT = """You are an expert Arduino programming assistant. Your role is to help users with:
-- Arduino programming, sketches, and coding best practices
-- Hardware connections, pins, and microcontroller configuration
-- Troubleshooting and debugging Arduino projects
-- Providing clear code examples and explanations
+SYSTEM_PROMPT = """You are an expert Arduino programming assistant.
 
-When answering questions:
-1. Use the provided documentation context as your primary source
-2. Give clear, concise explanations suitable for both beginners and advanced users
-3. Include code examples when relevant
-4. Explain the "why" behind your recommendations
-5. If the question falls outside Arduino scope, politely redirect
+Your job is to answer questions about Arduino clearly, correctly, and consistently.
 
-Always prioritize accuracy, safety, and helpful guidance."""
+## Core rules:
+- Be factually correct and avoid guessing.
+- Use the provided documentation context as the primary source of truth.
+- If context is incomplete, you may use general Arduino knowledge.
+- Never invent technical details or incorrect electrical explanations.
+- Never leave the answer empty.
+
+## Output style:
+- Be concise and structured.
+- Use simple language.
+- Prefer bullet points when explaining concepts.
+- Avoid repeating the same idea in different words.
+
+## Response format (always follow):
+1. Short definition (1–2 sentences)
+2. Key points or modes (bullet list if applicable)
+3. Short practical explanation or example (if relevant)
+
+## Safety rules:
+- Do not over-explain electronics unless explicitly asked.
+- Do not hallucinate functions, modes, or hardware behavior.
+- If unsure, say: "This is not clearly defined in the provided documentation."
+
+CRITICAL RULES:
+- Never use analogWrite unless explicitly mentioned in context.
+- For LED blinking tasks, use ONLY digitalWrite + delay or millis.
+- If unsure, say "not in documentation".
+- Do not infer hardware behavior.
+-Answer in Russian if the question is in Russian, otherwise answer in English.
+
+## Goal:
+Help the user understand Arduino quickly and accurately without confusion or unnecessary complexity.
+"""
 
 
 def check_dependencies() -> bool:
@@ -87,25 +124,27 @@ def load_embeddings() -> Any:
 
 
 def load_llm() -> Any:
-    """Load LLM model from Ollama."""
+    """Load chat model from Ollama."""
     try:
-        from langchain_ollama import OllamaLLM
+        from langchain_ollama import ChatOllama
     except ImportError:
         try:
-            from langchain_community.llms import Ollama
-            OllamaLLM = Ollama
+            from langchain_community.chat_models import ChatOllama
         except ImportError:
             raise ImportError(
-                "Cannot import OllamaLLM. "
+                "Cannot import ChatOllama. "
                 "Install: pip install langchain-ollama"
             )
 
     print(f"[INFO] Loading LLM model: {LLM_MODEL}")
-    return OllamaLLM(
+    return ChatOllama(
         model=LLM_MODEL,
         base_url=OLLAMA_BASE_URL,
-        temperature=0.7,
+        temperature=0.3,
         top_p=0.9,
+        num_predict=-1,
+        extra_body={"think": False},
+        num_ctx=8192,
     )
 
 
@@ -132,7 +171,43 @@ def load_vector_db() -> Any:
         settings=Settings(anonymized_telemetry=False),
     )
 
-    return client.get_collection(name=COLLECTION_NAME)
+    collection = client.get_collection(name=COLLECTION_NAME)
+    verify_embedding_model(collection)
+    return collection
+
+
+def verify_embedding_model(collection: Any) -> None:
+    """Ensure indexed embeddings use the same model as chat-time search."""
+    metadata = collection.metadata or {}
+    indexed_model = metadata.get(COLLECTION_EMBEDDING_MODEL_KEY)
+
+    if indexed_model is None:
+        print(
+            "[WARN] Vector DB does not store embedding model metadata. "
+            f"Expected search model: {EMBEDDING_MODEL}. "
+            "Re-run src/ingest.py to record and enforce the model match."
+        )
+        return
+
+    if indexed_model != EMBEDDING_MODEL:
+        raise ValueError(
+            "Embedding model mismatch: "
+            f"vector DB was indexed with {indexed_model!r}, "
+            f"but chat is using {EMBEDDING_MODEL!r}. "
+            "Use the same EMBEDDING_MODEL in src/ingest.py and src/chat.py, "
+            "then re-run ingestion."
+        )
+
+
+def debug_log(title: str, value: Any) -> None:
+    """Print verbose diagnostics when ARDUINO_CHAT_DEBUG is enabled."""
+    if not DEBUG:
+        return
+
+    print(f"\n[DEBUG] {title}")
+    print("-" * 70)
+    print(value)
+    print("-" * 70)
 
 
 def retrieve_relevant_docs(
@@ -141,25 +216,58 @@ def retrieve_relevant_docs(
     embeddings: Any,
     k: int = CONTEXT_WINDOW_SIZE,
 ) -> tuple[list[str], list[dict]]:
-    """Retrieve relevant documents from vector database."""
+    """Retrieve relevant documents from vector database (stable version)."""
     try:
-        # Embed the query
+        # 1. Embed query
         query_embedding = embeddings.embed_query(query)
 
-        # Search in ChromaDB
+        # 2. Query vector DB
         results = collection.query(
             query_embeddings=[query_embedding],
-            n_results=k,
+            n_results=max(k * 3, 10),  # берем больше → потом фильтруем
             include=["documents", "metadatas", "distances"],
         )
 
-        if not results["documents"] or not results["documents"][0]:
+        docs_batch = results.get("documents", [[]])[0]
+        metas_batch = results.get("metadatas", [[]])[0]
+        dists_batch = results.get("distances", [[]])[0]
+
+        if not docs_batch:
             return [], []
 
-        documents = results["documents"][0]
-        metadatas = results["metadatas"][0] if results["metadatas"][0] else []
-        
-        return documents, metadatas
+        MAX_DISTANCE = 0.8
+
+        candidates = []
+
+        # 3. Собираем кандидатов (НЕ возвращаем внутри цикла!)
+        for i, doc in enumerate(docs_batch):
+            if not doc or not doc.strip():
+                continue
+
+            dist = dists_batch[i] if i < len(dists_batch) else 999
+
+            if dist > MAX_DISTANCE:
+                continue
+
+            meta = metas_batch[i] if i < len(metas_batch) else {}
+            if not isinstance(meta, dict):
+                meta = {}
+
+            candidates.append((doc.strip(), meta, dist))
+
+        if not candidates:
+            return [], []
+
+        # 4. Сортировка по релевантности (ВАЖНО)
+        candidates.sort(key=lambda x: x[2])
+
+        # 5. Берем top-k
+        top = candidates[:k]
+
+        final_docs = [c[0] for c in top]
+        final_metas = [c[1] for c in top]
+
+        return final_docs, final_metas
 
     except Exception as e:
         print(f"[ERROR] Failed to retrieve documents: {e}")
@@ -169,38 +277,126 @@ def retrieve_relevant_docs(
 def format_context(documents: list[str], metadatas: list[dict]) -> str:
     """Format retrieved documents into context string."""
     if not documents:
-        return "No relevant documentation found in the knowledge base."
+        return ""
 
     context_parts = []
     for i, doc in enumerate(documents):
+        if not doc or not doc.strip():
+            continue
         metadata = metadatas[i] if i < len(metadatas) else {}
         source = metadata.get("source", "Unknown source")
-        context_parts.append(f"[{i + 1}. From {source}]\n{doc}")
+        context_parts.append(f"[{i + 1}. From {source}]\n{doc.strip()}")
 
     return "\n\n---\n\n".join(context_parts)
 
 
-def generate_answer(
-    llm: Any,
-    question: str,
-    context: str,
-) -> str:
-    """Generate answer using LLM with context."""
-    prompt = f"""System: {SYSTEM_PROMPT}
+def context_is_useful(context: str) -> bool:
+    """Return True when retrieved context is likely useful for grounding."""
+    return bool(context and len(context.strip()) >= MIN_CONTEXT_CHARS)
 
-Documentation Context:
-{context}
+
+def normalize_llm_response(response: Any) -> str:
+    if response is None:
+        return ""
+
+    # ChatOllama Message
+    if hasattr(response, "content"):
+        content = response.content
+        if isinstance(content, str) and content.strip():
+            return content
+
+    if isinstance(response, str):
+        return response
+
+    if isinstance(response, dict):
+        return response.get("content") or response.get("response") or ""
+
+    return str(response)
+
+
+def filter_query_domain(query: str) -> list[str]:
+    q = query.lower()
+
+    if "blink" in q or "led" in q:
+        return ["digital-io", "pinMode", "digitalWrite"]
+
+    if "analog" in q:
+        return ["analog-io"]
+
+    return []
+
+
+def safe_llm_call(llm, messages, retries: int = 3) -> str:
+    last_error = None
+
+    for _ in range(retries):
+        try:
+            response = llm.invoke(messages)
+
+            # Проверяем причину остановки
+            done_reason = (
+                response.response_metadata.get("done_reason", "")
+                if hasattr(response, "response_metadata")
+                else ""
+            )
+            if done_reason == "length":
+                print("[WARN] LLM hit token limit — try increasing num_predict")
+
+            text = normalize_llm_response(response)
+            text = text.strip() if text else ""
+
+            if text:
+                return text
+
+        except Exception as e:
+            last_error = e
+
+    return f"[ERROR] LLM failed after retries: {last_error}"
+
+def generate_answer(llm: Any, question: str, context: str) -> str:
+    try:
+        from langchain_core.messages import HumanMessage, SystemMessage
+    except ImportError:
+        return "[Error importing LangChain]"
+
+    has_useful_context = context_is_useful(context)
+
+    context_block = context.strip() if has_useful_context else (
+        "No relevant Arduino documentation was retrieved."
+    )
+
+    if len(context_block) > 800:
+        context_block = context_block[:800]
+
+    grounding_instruction = (
+        "Use documentation as primary source."
+        if has_useful_context
+        else "Answer using general Arduino knowledge."
+    )
+
+    user_prompt = f"""Documentation Context:
+{context_block}
 
 User Question: {question}
 
-Provide a helpful and accurate answer based on the documentation. If the documentation doesn't contain relevant information, indicate that and provide general Arduino knowledge if appropriate."""
+{grounding_instruction}"""
+
+    messages = [
+        SystemMessage(content=SYSTEM_PROMPT),
+        HumanMessage(content=user_prompt),
+    ]
 
     try:
-        response = llm.invoke(prompt)
-        return response.strip() if response else "[No response generated]"
+        response = safe_llm_call(llm, messages)
+
+        if not response:
+            return "[No response generated]"
+
+        return response.strip()
+
     except Exception as e:
         print(f"[ERROR] Failed to generate answer: {e}")
-        return "[Error generating response. Please try again.]"
+        return "[Error generating response]"
 
 
 def format_response(response: str) -> str:
@@ -239,6 +435,7 @@ def process_query(
     metadata = {
         "num_sources": len(documents),
         "sources": [m.get("source", "Unknown") for m in metadatas],
+        "has_useful_context": context_is_useful(context),
     }
 
     return formatted_answer, metadata
@@ -332,7 +529,7 @@ def main() -> None:
         llm = load_llm()
         collection = load_vector_db()
         print("[OK] All components loaded\n")
-    except (ImportError, FileNotFoundError) as e:
+    except (ImportError, FileNotFoundError, ValueError) as e:
         print(f"[ERROR] {e}")
         sys.exit(1)
 

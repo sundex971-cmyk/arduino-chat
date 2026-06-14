@@ -21,8 +21,8 @@
 pip install -r requirements.txt
 
 ### 2. Установить Ollama модели
-ollama pull qwen3:8b
-ollama pull qwen3-embedding:8b
+ollama pull qwen3.5:2b
+ollama pull qwen3-embedding:0.6b
 
 ### 3. Скачать документацию 
 python src/scraper.py
