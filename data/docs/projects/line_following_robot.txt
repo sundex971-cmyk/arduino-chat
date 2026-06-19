@@ -1,0 +1,121 @@
+Project: Line Following Robot
+Difficulty: intermediate
+Tags: ir-sensor, l298n, motor, pwm, analogRead, robot
+
+Description:
+  Робот следует по чёрной линии на белом фоне.
+  Два ИК-датчика определяют положение линии,
+  L298N управляет двумя DC моторами через PWM.
+  Логика: если левый датчик видит линию — поворот влево, правый — вправо.
+
+Components:
+  - Arduino Uno
+  - L298N motor driver module
+  - DC мотор с редуктором (2 шт.)
+  - ИК датчик линии (2 шт., например TCRT5000)
+  - Колёса (2 шт.) + опорное колесо (1 шт.)
+  - Аккумулятор 7.4V 18650 (2 шт.) или батарейный отсек 6xAA
+  - Провода
+  - Шасси для робота
+
+Connections:
+  --- L298N → Arduino ---
+  L298N IN1  -> D7
+  L298N IN2  -> D6
+  L298N IN3  -> D5
+  L298N IN4  -> D4
+  L298N ENA  -> D9  (PWM — скорость левого мотора)
+  L298N ENB  -> D10 (PWM — скорость правого мотора)
+  L298N GND  -> GND (общий с Arduino!)
+  L298N 5V   -> 5V Arduino (если нужно питать Arduino от L298N)
+
+  --- L298N → Моторы ---
+  L298N OUT1, OUT2 -> Левый мотор
+  L298N OUT3, OUT4 -> Правый мотор
+
+  --- L298N → Питание ---
+  L298N VIN  -> + аккумулятора (7-12V)
+  L298N GND  -> - аккумулятора
+
+  --- ИК датчики → Arduino ---
+  Левый  датчик VCC -> 5V
+  Левый  датчик GND -> GND
+  Левый  датчик OUT -> D2
+  Правый датчик VCC -> 5V
+  Правый датчик GND -> GND
+  Правый датчик OUT -> D3
+
+Warnings:
+  - ОБЯЗАТЕЛЬНО общий GND между Arduino и L298N — без этого сигналы IN1-IN4 не работают.
+  - НЕ питать моторы от пина 5V Arduino — сгорит регулятор на плате.
+    L298N имеет встроенный стабилизатор 5V — используй его для питания Arduino.
+  - PWM на Uno доступен только на пинах 3, 5, 6, 9, 10, 11.
+    ENA и ENB ДОЛЖНЫ быть на PWM пинах, иначе управление скоростью невозможно.
+  - L298N греется при токе > 1A — при длительной работе нужен радиатор.
+  - ИК датчики чувствительны к внешнему освещению — калибруй порог в помещении.
+  - Джампер на ENA/ENB L298N должен быть СНЯТ если управляешь скоростью через PWM.
+    Если джампер стоит — мотор всегда на максимуме.
+
+Code:
+  // Пины моторов
+  const int IN1 = 7, IN2 = 6;  // Левый мотор направление
+  const int IN3 = 5, IN4 = 4;  // Правый мотор направление
+  const int ENA = 9;            // Левый мотор скорость (PWM)
+  const int ENB = 10;           // Правый мотор скорость (PWM)
+
+  // Пины датчиков (LOW = видит линию для большинства TCRT5000 модулей)
+  const int IR_LEFT  = 2;
+  const int IR_RIGHT = 3;
+
+  const int BASE_SPEED = 150;   // 0-255
+  const int TURN_SPEED = 200;
+
+  void motorLeft(int speed, bool forward) {
+    digitalWrite(IN1, forward ? HIGH : LOW);
+    digitalWrite(IN2, forward ? LOW  : HIGH);
+    analogWrite(ENA, speed);
+  }
+
+  void motorRight(int speed, bool forward) {
+    digitalWrite(IN3, forward ? HIGH : LOW);
+    digitalWrite(IN4, forward ? LOW  : HIGH);
+    analogWrite(ENB, speed);
+  }
+
+  void setup() {
+    pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
+    pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
+    pinMode(ENA, OUTPUT); pinMode(ENB, OUTPUT);
+    pinMode(IR_LEFT,  INPUT);
+    pinMode(IR_RIGHT, INPUT);
+  }
+
+  void loop() {
+    bool leftOnLine  = digitalRead(IR_LEFT)  == LOW;
+    bool rightOnLine = digitalRead(IR_RIGHT) == LOW;
+
+    if (leftOnLine && rightOnLine) {
+      // Оба на линии — едем прямо
+      motorLeft(BASE_SPEED, true);
+      motorRight(BASE_SPEED, true);
+    } else if (leftOnLine && !rightOnLine) {
+      // Линия слева — поворот влево
+      motorLeft(0, true);
+      motorRight(TURN_SPEED, true);
+    } else if (!leftOnLine && rightOnLine) {
+      // Линия справа — поворот вправо
+      motorLeft(TURN_SPEED, true);
+      motorRight(0, true);
+    } else {
+      // Линия потеряна — стоп
+      motorLeft(0, true);
+      motorRight(0, true);
+    }
+  }
+
+Alternatives:
+  - 3 или 5 ИК датчиков: точнее отслеживание на поворотах
+  - L293D вместо L298N: меньше, но макс. ток 600мА против 2A у L298N
+  - TB6612FNG: эффективнее L298N (нет потерь на транзисторах), меньше нагрев
+  - PID-регулятор вместо простой логики: плавнее движение на высокой скорости
+  - Encoder на моторах: точное измерение пройденного расстояния

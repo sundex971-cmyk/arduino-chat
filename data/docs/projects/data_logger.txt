@@ -1,0 +1,152 @@
+Project: Data Logger
+Difficulty: advanced
+Tags: sd-card, rtc, dht22, spi, i2c, eeprom, file-io, ds3231
+
+Description:
+  Логгер данных: каждые 10 секунд считывает температуру и влажность (DHT22),
+  добавляет временну́ю метку из RTC (DS3231) и записывает строку CSV на SD-карту.
+  Файл можно открыть в Excel или Google Sheets.
+
+Components:
+  - Arduino Uno
+  - DHT22 (датчик температуры и влажности)
+  - DS3231 RTC модуль (с батареей CR2032)
+  - SD card модуль (SPI)
+  - MicroSD карта (FAT32, до 32 ГБ)
+  - Резистор 10 кОм (1 шт.) — pull-up для DHT22
+  - Провода
+  - Breadboard
+
+Connections:
+  --- DHT22 ---
+  DHT22 VCC  -> 5V
+  DHT22 GND  -> GND
+  DHT22 DATA -> D2
+  DHT22 DATA -> резистор 10 кОм -> 5V  (pull-up)
+
+  --- DS3231 (I2C) ---
+  DS3231 VCC -> 5V
+  DS3231 GND -> GND
+  DS3231 SDA -> A4
+  DS3231 SCL -> A5
+
+  --- SD модуль (SPI) ---
+  SD VCC  -> 5V  (или 3.3V — зависит от модуля, проверь маркировку)
+  SD GND  -> GND
+  SD MOSI -> D11
+  SD MISO -> D12
+  SD SCK  -> D13
+  SD CS   -> D10
+
+  Примечание: SPI и I2C не конфликтуют — используют разные пины.
+  DS3231 на I2C (A4/A5), SD на SPI (D10-D13) — работают одновременно.
+
+Libraries:
+  - DHT sensor library by Adafruit (Library Manager)
+  - Adafruit Unified Sensor (зависимость DHT, ставится автоматически)
+  - RTClib by Adafruit (Library Manager)
+  - SD (встроенная в Arduino IDE, устанавливать не нужно)
+
+Warnings:
+  - SD карта должна быть отформатирована в FAT32 (не exFAT, не NTFS).
+    Карты > 32 ГБ по умолчанию форматируются в exFAT — нужно форматировать вручную.
+  - Пин CS (chip select) для SD по умолчанию D10 — он должен быть OUTPUT
+    даже если используешь другой CS пин.
+  - DHT22 требует pull-up резистор 10 кОм на линии DATA.
+    Без него датчик читает NaN или не отвечает.
+  - DHT22 минимальный интервал опроса — 2 секунды. Чаще не читать.
+  - На Uno осталось мало RAM (2 КБ) — не накапливай строки в памяти,
+    сразу писать на SD. Использовать F() для строковых литералов.
+  - Пины 11, 12, 13 заняты SPI (SD карта) — не использовать для другого.
+  - При первом запуске раскомментировать rtc.adjust для установки времени.
+
+Code:
+  #include <SPI.h>
+  #include <SD.h>
+  #include <Wire.h>
+  #include <RTClib.h>
+  #include <DHT.h>
+
+  #define DHT_PIN  2
+  #define DHT_TYPE DHT22
+  #define SD_CS    10
+  #define LOG_FILE "log.csv"
+  #define INTERVAL 10000UL  // 10 секунд
+
+  DHT dht(DHT_PIN, DHT_TYPE);
+  RTC_DS3231 rtc;
+
+  unsigned long lastLog = 0;
+
+  void setup() {
+    Serial.begin(9600);
+    dht.begin();
+
+    if (!rtc.begin()) {
+      Serial.println(F("DS3231 not found"));
+      while (true);
+    }
+    // Установить время один раз, затем закомментировать:
+    // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+
+    if (!SD.begin(SD_CS)) {
+      Serial.println(F("SD init failed"));
+      while (true);
+    }
+
+    // Записать заголовок если файл новый
+    if (!SD.exists(LOG_FILE)) {
+      File f = SD.open(LOG_FILE, FILE_WRITE);
+      if (f) {
+        f.println(F("datetime,temperature_c,humidity_pct"));
+        f.close();
+      }
+    }
+
+    Serial.println(F("Logger started"));
+  }
+
+  void loop() {
+    unsigned long now = millis();
+    if (now - lastLog < INTERVAL) return;
+    lastLog = now;
+
+    float temp = dht.readTemperature();
+    float hum  = dht.readHumidity();
+
+    if (isnan(temp) || isnan(hum)) {
+      Serial.println(F("DHT read error"));
+      return;
+    }
+
+    DateTime dt = rtc.now();
+
+    // Формат: 2024-06-17 14:30:00,23.50,58.20
+    char buf[32];
+    snprintf(buf, sizeof(buf),
+      "%04d-%02d-%02d %02d:%02d:%02d",
+      dt.year(), dt.month(), dt.day(),
+      dt.hour(), dt.minute(), dt.second());
+
+    File f = SD.open(LOG_FILE, FILE_WRITE);
+    if (f) {
+      f.print(buf);
+      f.print(",");
+      f.print(temp, 2);
+      f.print(",");
+      f.println(hum, 2);
+      f.close();
+      Serial.print(buf);
+      Serial.print(" T="); Serial.print(temp);
+      Serial.print(" H="); Serial.println(hum);
+    } else {
+      Serial.println(F("SD write error"));
+    }
+  }
+
+Alternatives:
+  - BME280 вместо DHT22: добавляет давление, точнее, I2C (не нужен pull-up)
+  - DS18B20 вместо DHT22: только температура, но точнее (±0.5°C), 1-Wire
+  - EEPROM вместо SD: подходит для малого объёма данных без внешних модулей
+  - ESP32 + Google Sheets: запись данных напрямую в облако по WiFi без SD
+  - Добавить дисплей SSD1306: показывать последние показания без Serial Monitor

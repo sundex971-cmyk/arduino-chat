@@ -1,0 +1,31 @@
+Board: ESP32 (DevKit V1)
+Component: Потенциометр 10 кОм
+Logic level: 3.3V
+
+Wiring:
+  Потенциометр левая нога  -> GND
+  Потенциометр средняя нога -> GPIO34 (сигнал, ADC1)
+  Потенциометр правая нога  -> 3.3V
+
+Notes:
+  - ВАЖНО: использовать только пины ADC1 (GPIO32-39) для analogRead.
+    Пины ADC2 (GPIO0, 2, 4, 12-15, 25-27) недоступны при активном WiFi.
+  - GPIO34-39 — только вход (input-only), не имеют встроенного pull-up/down,
+    но для потенциометра это не требуется.
+  - analogRead() на ESP32 по умолчанию возвращает 0-4095 (12 бит) —
+    в 4 раза точнее чем на Arduino Uno.
+  - Питание от 3.3V, а не 5V — иначе на пине будет напряжение выше допустимого.
+  - analogSetAttenuation() позволяет настроить измеряемый диапазон напряжения.
+
+Code snippet:
+  const int POT_PIN = 34;
+
+  void setup() {
+    Serial.begin(115200);
+  }
+
+  void loop() {
+    int value = analogRead(POT_PIN);  // 0-4095
+    Serial.println(value);
+    delay(200);
+  }

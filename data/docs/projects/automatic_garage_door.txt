@@ -1,0 +1,132 @@
+# Automatic Garage Door
+
+
+Category:
+STEAM Project / Automation
+
+
+Difficulty:
+Intermediate
+
+
+## Project description
+
+Automatic Garage Door is a small educational model.
+
+The system detects a vehicle or object and opens a miniature garage door automatically.
+
+
+## Main components
+
+
+Microcontroller:
+
+Arduino Uno
+
+
+Distance sensor:
+
+HC-SR04
+
+
+Actuator:
+
+Servo SG90
+
+
+Optional:
+
+- LED indicator
+- Button
+
+
+
+## How it works
+
+
+1. HC-SR04 measures distance.
+
+
+2. Arduino checks if an object is near.
+
+
+3. If distance is below threshold:
+
+Servo opens the door.
+
+
+4. After delay:
+
+Servo closes the door.
+
+
+
+## Connections
+
+
+HC-SR04:
+
+
+VCC → 5V
+
+GND → GND
+
+TRIG → D6
+
+ECHO → D7
+
+
+
+Servo SG90:
+
+
+VCC → 5V
+
+GND → GND
+
+Signal → D9
+
+
+
+## Program logic
+
+
+Measure distance
+
+
+↓
+
+Object detected
+
+
+↓
+
+Move servo to open position
+
+
+↓
+
+Wait
+
+
+↓
+
+Return servo to closed position
+
+
+
+## Improvements
+
+
+- Add keypad access
+- Add RFID module
+- Add WiFi monitoring with ESP32
+
+
+
+## Common mistakes
+
+
+- Powering servo directly from weak USB source
+- Forgetting common GND
+- Connecting motor directly to Arduino pins

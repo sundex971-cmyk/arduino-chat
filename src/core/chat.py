@@ -6,6 +6,7 @@ Uses ChromaDB for vector search and Ollama/LangChain for LLM capabilities.
 
 from __future__ import annotations
 
+import re
 import sys
 import os
 from typing import Any
@@ -36,17 +37,148 @@ CONTEXT_WINDOW_SIZE = 3
 DEFAULT_TIMEOUT = 30
 DEBUG = os.getenv("ARDUINO_CHAT_DEBUG", "").lower() in {"1", "true", "yes", "on"}
 MIN_CONTEXT_CHARS = 120
+MAX_HISTORY_PAIRS = 5  # сколько последних пар (вопрос+ответ) хранить в памяти
 
-SYSTEM_PROMPT = """You are an expert Arduino programming assistant.
+# ------------------------------------------------------------------ #
+# Language detection                                                   #
+# ------------------------------------------------------------------ #
 
-Your job is to answer questions about Arduino clearly, correctly, and consistently.
+# Romanian-specific letters/diacritics — strong signal even without accents
+# typed (ă, â, î, ș/ş, ț/ţ) plus a few very common RO words that don't
+# appear in Russian.
+_RO_MARKERS = re.compile(
+    r"[ăâîșşțţ]"
+    r"|\b(ce|cum|unde|cand|când|pentru|si|şi|este|sunt|placa|proiect)\b",
+    re.IGNORECASE,
+)
+_CYRILLIC = re.compile(r"[а-яА-ЯёЁ]")
 
-## Core rules:
+
+def detect_language(text: str) -> str:
+    """Return 'ru', 'ro', or 'en' based on the user's question."""
+    if _CYRILLIC.search(text):
+        return "ru"
+    if _RO_MARKERS.search(text):
+        return "ro"
+    return "en"
+
+
+_LANGUAGE_INSTRUCTION = {
+    "ru": "Отвечай на русском языке.",
+    "ro": "Răspunde în limba română.",
+    "en": "Answer in English.",
+}
+
+# ------------------------------------------------------------------ #
+# Query mode detection: "project" vs "general"                        #
+# ------------------------------------------------------------------ #
+
+# Phrases that signal the user wants a full project (schematic-style answer)
+# rather than a definition/explanation/debugging answer.
+_PROJECT_MARKERS = re.compile(
+    r"\b("
+    r"проект|сделай|собери|построй|схему|схема подключения|я хочу собрать|я хочу сделать|"
+    r"как сделать|как собрать|"
+    r"proiect|f[aă]|construie[sș]te|construie[sş]te|schema|vreau să fac|vreau să construiesc|cum să fac|cum să construiesc|"
+    r"build|make a project|create a project|design a circuit|wire up"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def detect_query_mode(query: str) -> str:
+    """Return 'project' if the user is asking for a full project/circuit,
+    otherwise 'general' for definitions, explanations, debugging, etc."""
+    return "project" if _PROJECT_MARKERS.search(query) else "general"
+
+
+# ------------------------------------------------------------------ #
+# System prompts                                                       #
+# ------------------------------------------------------------------ #
+
+_SHARED_RULES = """## Core rules:
 - Be factually correct and avoid guessing.
 - Use the provided documentation context as the primary source of truth.
-- If context is incomplete, you may use general Arduino knowledge.
+- If context is incomplete, you may use general Arduino/ESP32 knowledge.
 - Never invent technical details or incorrect electrical explanations.
 - Never leave the answer empty.
+
+## Safety rules:
+- Do not hallucinate functions, modes, or hardware behavior.
+- If unsure, say: "This is not clearly defined in the provided documentation."
+- Never suggest a connection listed as forbidden in the documentation context
+  (e.g. signal pin to VCC, VCC to GND, 5V directly to an ESP32 GPIO).
+- Always flag voltage-level mismatches between board and component
+  (e.g. ESP32 is 3.3V logic, most Arduino boards are 5V logic).
+
+CRITICAL RULES:
+- Never use analogWrite unless explicitly mentioned in context.
+- For LED blinking tasks, use ONLY digitalWrite + delay or millis.
+- ESP32 has no analogWrite — use ledcAttach/ledcWrite (LEDC) instead, and say so
+  explicitly if the board is ESP32.
+- If unsure, say "not in documentation".
+- Do not infer hardware behavior.
+
+## Language:
+- If the question is written in Russian (Cyrillic), answer in Russian.
+- If the question is written in Romanian, answer in Romanian.
+- Otherwise, answer in English.
+"""
+
+PROJECT_SYSTEM_PROMPT = f"""You are an expert Arduino and ESP32 hardware assistant.
+
+The user is asking you to design or describe a hardware project (a device, a circuit,
+something to build). You MUST answer using EXACTLY the following 6-section format,
+in this order, with these exact section titles translated into the answer's language
+but keeping the numbering 1-6.
+
+{_SHARED_RULES}
+
+## Required response format (always follow, do not skip or reorder sections):
+
+1. Название проекта / Project name / Numele proiectului
+   - One short, descriptive title for the project.
+
+2. Как работает / How it works / Cum funcționează
+   - 2-4 sentences explaining the operating principle in simple language.
+
+3. Компоненты / Components / Componente
+   - Bullet list of every physical part needed (board, sensors, resistors, etc).
+   - Include resistor/capacitor values where relevant.
+
+4. Подключение / Connections / Conexiuni
+   - Pin-by-pin wiring list, formatted as "Component pin -> Board pin".
+   - Mention the board's logic voltage (5V or 3.3V) and any required
+     level-shifting or voltage divider if the documentation context covers it.
+
+5. Альтернативы / Alternatives / Alternative
+   - 2-4 bullet points: alternative components or approaches, with a short
+     trade-off note for each (cheaper/more accurate/simpler/etc).
+
+6. Предупреждения / Warnings / Avertismente
+   - Bullet list of concrete risks: wrong polarity, missing resistor,
+     voltage mismatch, current limits, common beginner mistakes.
+   - Cross-check against any "forbidden connections" rules present in context
+     and call them out explicitly if relevant.
+
+Do not add extra sections. Do not merge sections. If information for a section
+is missing from context, use general knowledge but mark uncertain details with
+"⚠️ not confirmed in documentation".
+
+For beginner STEAM projects:
+- Prefer the simplest solution.
+- Use only components from retrieved documentation.
+- Do not add advanced alternatives unless requested.
+- Always include exact wiring from project documentation.
+"""
+
+GENERAL_SYSTEM_PROMPT = f"""You are an expert Arduino and ESP32 programming assistant.
+
+The user is asking a regular question (a definition, an explanation, debugging help,
+or a "how does X work" question) — NOT a request to design a full project.
+Do NOT use the 6-section project format for these questions.
+
+{_SHARED_RULES}
 
 ## Output style:
 - Be concise and structured.
@@ -55,25 +187,36 @@ Your job is to answer questions about Arduino clearly, correctly, and consistent
 - Avoid repeating the same idea in different words.
 
 ## Response format (always follow):
-1. Short definition (1–2 sentences)
+1. Short definition (1-2 sentences)
 2. Key points or modes (bullet list if applicable)
 3. Short practical explanation or example (if relevant)
 
-## Safety rules:
-- Do not over-explain electronics unless explicitly asked.
-- Do not hallucinate functions, modes, or hardware behavior.
-- If unsure, say: "This is not clearly defined in the provided documentation."
-
-CRITICAL RULES:
-- Never use analogWrite unless explicitly mentioned in context.
-- For LED blinking tasks, use ONLY digitalWrite + delay or millis.
-- If unsure, say "not in documentation".
-- Do not infer hardware behavior.
--Answer in Russian if the question is in Russian, otherwise answer in English.
-
 ## Goal:
-Help the user understand Arduino quickly and accurately without confusion or unnecessary complexity.
+Help the user understand Arduino/ESP32 quickly and accurately without confusion
+or unnecessary complexity.
 """
+
+
+def select_system_prompt(query: str) -> tuple[str, str]:
+    """Return (system_prompt, mode) for the given user query."""
+    mode = detect_query_mode(query)
+    prompt = PROJECT_SYSTEM_PROMPT if mode == "project" else GENERAL_SYSTEM_PROMPT
+    return prompt, mode
+
+
+def trim_history(
+    history: list[tuple[str, str]],
+    max_pairs: int = MAX_HISTORY_PAIRS,
+) -> list[tuple[str, str]]:
+    """Keep only the last `max_pairs` (user, assistant) exchanges.
+
+    `history` is a flat list like [("user", "..."), ("assistant", "..."), ...].
+    Each pair is 2 entries, so we keep the last max_pairs * 2 entries.
+    """
+    max_entries = max_pairs * 2
+    if len(history) <= max_entries:
+        return history
+    return history[-max_entries:]
 
 
 def check_dependencies() -> bool:
@@ -144,7 +287,7 @@ def load_llm() -> Any:
         top_p=0.9,
         num_predict=-1,
         extra_body={"think": False},
-        num_ctx=8192,
+        num_ctx=16384,
     )
 
 
@@ -162,7 +305,7 @@ def load_vector_db() -> Any:
     if not VECTOR_DB_DIR.exists():
         raise FileNotFoundError(
             f"Vector DB not found at {VECTOR_DB_DIR}. "
-            "Run: python src/ingest.py"
+            "Run: python src/core/ingest.py"
         )
 
     print(f"[INFO] Loading vector database from {VECTOR_DB_DIR}")
@@ -185,7 +328,7 @@ def verify_embedding_model(collection: Any) -> None:
         print(
             "[WARN] Vector DB does not store embedding model metadata. "
             f"Expected search model: {EMBEDDING_MODEL}. "
-            "Re-run src/ingest.py to record and enforce the model match."
+            "Re-run src/core/ingest.py to record and enforce the model match."
         )
         return
 
@@ -194,7 +337,7 @@ def verify_embedding_model(collection: Any) -> None:
             "Embedding model mismatch: "
             f"vector DB was indexed with {indexed_model!r}, "
             f"but chat is using {EMBEDDING_MODEL!r}. "
-            "Use the same EMBEDDING_MODEL in src/ingest.py and src/chat.py, "
+            "Use the same EMBEDDING_MODEL in src/core/ingest.py and src/core/chat.py, "
             "then re-run ingestion."
         )
 
@@ -235,7 +378,8 @@ def retrieve_relevant_docs(
         if not docs_batch:
             return [], []
 
-        MAX_DISTANCE = 0.8
+        MAX_DISTANCE = 1.1  # было 0.8 — слишком строго резало кросс-языковые совпадения
+                             # (русский запрос против англоязычных заголовков документов)
 
         candidates = []
 
@@ -256,6 +400,7 @@ def retrieve_relevant_docs(
             candidates.append((doc.strip(), meta, dist))
 
         if not candidates:
+            debug_log("Retrieval", "No candidates passed MAX_DISTANCE filter")
             return [], []
 
         # 4. Сортировка по релевантности (ВАЖНО)
@@ -263,6 +408,11 @@ def retrieve_relevant_docs(
 
         # 5. Берем top-k
         top = candidates[:k]
+
+        debug_log(
+            "Retrieved sources (source, distance)",
+            [(c[1].get("source", "?"), round(c[2], 3)) for c in top],
+        )
 
         final_docs = [c[0] for c in top]
         final_metas = [c[1] for c in top]
@@ -353,9 +503,15 @@ def safe_llm_call(llm, messages, retries: int = 3) -> str:
 
     return f"[ERROR] LLM failed after retries: {last_error}"
 
-def generate_answer(llm: Any, question: str, context: str) -> str:
+
+def generate_answer(
+    llm: Any,
+    question: str,
+    context: str,
+    history: list[tuple[str, str]] | None = None,
+) -> str:
     try:
-        from langchain_core.messages import HumanMessage, SystemMessage
+        from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
     except ImportError:
         return "[Error importing LangChain]"
 
@@ -365,26 +521,50 @@ def generate_answer(llm: Any, question: str, context: str) -> str:
         "No relevant Arduino documentation was retrieved."
     )
 
-    if len(context_block) > 800:
-        context_block = context_block[:800]
+    MAX_CONTEXT_CHARS = 3500  # было 800 — резало документ до того, как доходило
+                               # до Connections/Warnings (часто в конце файла)
+    if len(context_block) > MAX_CONTEXT_CHARS:
+        cut = context_block[:MAX_CONTEXT_CHARS]
+        # обрезаем по последнему переносу строки, а не посреди слова/числа
+        last_newline = cut.rfind("\n")
+        if last_newline > MAX_CONTEXT_CHARS * 0.5:
+            cut = cut[:last_newline]
+        context_block = cut + "\n[...context truncated...]"
 
     grounding_instruction = (
         "Use documentation as primary source."
         if has_useful_context
-        else "Answer using general Arduino knowledge."
+        else "Answer using general Arduino/ESP32 knowledge."
     )
+
+    system_prompt, mode = select_system_prompt(question)
+    language = detect_language(question)
+    language_instruction = _LANGUAGE_INSTRUCTION[language]
+
+    debug_log("Selected mode", mode)
+    debug_log("Detected language", language)
 
     user_prompt = f"""Documentation Context:
 {context_block}
 
 User Question: {question}
 
-{grounding_instruction}"""
+{grounding_instruction}
+{language_instruction}"""
 
-    messages = [
-        SystemMessage(content=SYSTEM_PROMPT),
-        HumanMessage(content=user_prompt),
-    ]
+    # Собираем сообщения: системный промпт -> история диалога -> текущий вопрос
+    messages: list[Any] = [SystemMessage(content=system_prompt)]
+
+    if history:
+        trimmed = trim_history(history)
+        debug_log("History entries used", len(trimmed))
+        for role, content in trimmed:
+            if role == "user":
+                messages.append(HumanMessage(content=content))
+            elif role == "assistant":
+                messages.append(AIMessage(content=content))
+
+    messages.append(HumanMessage(content=user_prompt))
 
     try:
         response = safe_llm_call(llm, messages)
@@ -418,24 +598,39 @@ def process_query(
     collection: Any,
     embeddings: Any,
     llm: Any,
+    history: list[tuple[str, str]] | None = None,
 ) -> tuple[str, dict]:
-    """Process a single user query and return answer with metadata."""
+    """Process a single user query and return answer with metadata.
+
+    If `history` is provided, it is used as conversation context for the LLM
+    and updated in-place with the new (user, assistant) exchange.
+    """
     # Retrieve relevant documents
     documents, metadatas = retrieve_relevant_docs(query, collection, embeddings)
 
     # Format context
     context = format_context(documents, metadatas)
 
-    # Generate answer
-    answer = generate_answer(llm, query, context)
+    # Generate answer (with conversation history if provided)
+    answer = generate_answer(llm, query, context, history=history)
 
     # Format response
     formatted_answer = format_response(answer)
+
+    # Update history in-place so the caller's list grows across turns
+    if history is not None:
+        history.append(("user", query))
+        history.append(("assistant", formatted_answer))
+        # Сразу обрезаем, чтобы список не рос бесконечно в течение долгой сессии
+        trimmed = trim_history(history)
+        history[:] = trimmed
 
     metadata = {
         "num_sources": len(documents),
         "sources": [m.get("source", "Unknown") for m in metadatas],
         "has_useful_context": context_is_useful(context),
+        "mode": detect_query_mode(query),
+        "language": detect_language(query),
     }
 
     return formatted_answer, metadata
@@ -448,16 +643,20 @@ def interactive_chat(
 ) -> None:
     """Run interactive chat loop."""
     print("\n" + "=" * 70)
-    print("🤖 Arduino AI Tutor - RAG-based Chat System")
+    print("🤖 STEAM AI Tutor - RAG-based Chat System")
     print("=" * 70)
-    print("\nWelcome! I'm your Arduino programming assistant.")
-    print("Ask me anything about Arduino programming, hardware, or troubleshooting.")
+    print("\nWelcome! I'm your STEAM programming assistant.")
+    print("Ask me anything about STEAM programming, hardware, or troubleshooting.")
     print("\nCommands:")
-    print("  'help' - Show this message")
+    print("  'help'  - Show this message")
+    print("  'reset' - Forget conversation history and start fresh")
     print("  'exit' or 'quit' - End conversation")
     print("=" * 70 + "\n")
 
     conversation_count = 0
+    # Плоский список (role, content) — память в рамках текущей сессии.
+    # Обрезается до последних MAX_HISTORY_PAIRS пар внутри process_query().
+    conversation_history: list[tuple[str, str]] = []
 
     while True:
         try:
@@ -469,20 +668,29 @@ def interactive_chat(
             # Handle commands
             if user_input.lower() in ["exit", "quit", "bye"]:
                 print(
-                    "\n👋 Thank you for using Arduino AI Tutor! "
+                    "\n👋 Thank you for using STEAM AI Tutor! "
                     "Happy coding!\n"
                 )
                 break
 
             if user_input.lower() == "help":
                 print("\n📚 Available commands:")
-                print("  'help' - Show this message")
+                print("  'help'  - Show this message")
+                print("  'reset' - Forget conversation history and start fresh")
                 print("  'exit' or 'quit' - End conversation\n")
                 continue
 
-            # Process query
+            if user_input.lower() == "reset":
+                conversation_history.clear()
+                print("\n🔄 Conversation history cleared.\n")
+                continue
+
+            # Process query (history is read AND updated in-place here)
             print("\n⏳ Processing your question...")
-            answer, metadata = process_query(user_input, collection, embeddings, llm)
+            answer, metadata = process_query(
+                user_input, collection, embeddings, llm,
+                history=conversation_history,
+            )
 
             print(f"\nAssistant: {answer}")
             if metadata["num_sources"] > 0:
@@ -492,7 +700,7 @@ def interactive_chat(
             conversation_count += 1
 
         except KeyboardInterrupt:
-            print("\n\n⏹️  Chat interrupted. Thank you for using Arduino AI Tutor!\n")
+            print("\n\n⏹️  Chat interrupted. Thank you for using STEAM AI Tutor!\n")
             break
         except EOFError:
             print("\n👋 End of input. Goodbye!\n")
@@ -505,7 +713,7 @@ def interactive_chat(
 def main() -> None:
     """Main entry point."""
     print("\n" + "=" * 70)
-    print("Arduino Chat - Initializing")
+    print("STEAM Chat - Initializing")
     print("=" * 70 + "\n")
 
     # Check dependencies

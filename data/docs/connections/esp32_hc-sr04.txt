@@ -1,0 +1,42 @@
+Board: ESP32 (DevKit V1)
+Component: HC-SR04 (ultrasonic distance sensor)
+Logic level: 5V sensor, 3.3V board — ВНИМАНИЕ: требуется делитель напряжения
+
+Wiring:
+  HC-SR04 VCC  -> 5V (VIN)
+  HC-SR04 GND  -> GND
+  HC-SR04 TRIG -> GPIO18
+  HC-SR04 ECHO -> GPIO19 (через делитель напряжения, см. ниже)
+
+Voltage divider for ECHO (5V -> 3.3V):
+  HC-SR04 ECHO -> резистор 1 кОм -> GPIO19
+  GPIO19 -> резистор 2 кОм -> GND
+  (делитель: 5V * 2кОм/(1кОм+2кОм) ≈ 3.3V на GPIO19)
+
+Notes:
+  - HC-SR04 ECHO выдаёт 5V — ESP32 GPIO рассчитаны на 3.3V максимум.
+    Без делителя возможен выход из строя пина или всей платы.
+  - TRIG — выход с ESP32 (3.3V), HC-SR04 воспринимает 3.3V как HIGH корректно,
+    делитель на TRIG не нужен.
+  - Избегай strapping pins (GPIO0, 2, 12, 15) для TRIG/ECHO — могут влиять на загрузку.
+  - GPIO18/19 — безопасный выбор, не strapping и не ADC2.
+  - pulseIn() работает на ESP32 так же как на Arduino.
+
+Code snippet:
+  const int TRIG_PIN = 18;
+  const int ECHO_PIN = 19;
+
+  void setup() {
+    pinMode(TRIG_PIN, OUTPUT);
+    pinMode(ECHO_PIN, INPUT);
+  }
+
+  long getDistanceCm() {
+    digitalWrite(TRIG_PIN, LOW);
+    delayMicroseconds(2);
+    digitalWrite(TRIG_PIN, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(TRIG_PIN, LOW);
+    long duration = pulseIn(ECHO_PIN, HIGH, 30000);
+    return duration * 0.034 / 2;
+  }

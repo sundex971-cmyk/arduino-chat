@@ -1,0 +1,67 @@
+Project: Potentiometer to Serial
+Difficulty: beginner
+Tags: potentiometer, analogRead, map, serial, no-library
+
+Description:
+  Потенциометр подключён к аналоговому входу.
+  Значение (0-1023) считывается, преобразуется в проценты и напряжение,
+  выводится в Serial Monitor каждые 200 мс.
+
+Components:
+  - Arduino Uno
+  - Потенциометр 10 кОм (1 шт.)
+  - Провода (3 шт.)
+  - Breadboard
+
+Connections:
+  Потенциометр левая нога  -> GND
+  Потенциометр средняя нога -> A0  (сигнал)
+  Потенциометр правая нога  -> 5V
+
+Warnings:
+  - analogRead() возвращает 0-1023 (10 бит) на Uno/Nano/Mega.
+    На Due, Zero, MKR — 12 бит (0-4095). На ESP32 — 12 бит (0-4095).
+  - Никогда не подключай потенциометр крайними ногами к 5V и GND в обратном порядке —
+    просто изменится направление вращения, но не более.
+  - Аналоговый пин без подключённого устройства "плавает" и читает шум.
+    Если отключить потенциометр — значения будут случайными.
+  - map() не ограничивает значения — если вход выходит за диапазон,
+    выход тоже выйдет за диапазон. Используй constrain() после map().
+  - Serial.begin() в setup() обязателен — без него Serial Monitor покажет мусор.
+    Скорость в коде и в Serial Monitor должна совпадать (9600).
+
+Code:
+  const int POT_PIN = A0;
+  const unsigned long INTERVAL = 200;  // мс между выводами
+
+  unsigned long lastPrint = 0;
+
+  void setup() {
+    Serial.begin(9600);
+    Serial.println("Potentiometer ready");
+  }
+
+  void loop() {
+    unsigned long now = millis();
+    if (now - lastPrint < INTERVAL) return;
+    lastPrint = now;
+
+    int raw     = analogRead(POT_PIN);           // 0-1023
+    int percent = map(raw, 0, 1023, 0, 100);     // 0-100%
+    float volts = raw * (5.0 / 1023.0);          // 0.0-5.0V
+
+    Serial.print("Raw: ");    Serial.print(raw);
+    Serial.print(" | %: ");   Serial.print(percent);
+    Serial.print(" | V: ");   Serial.println(volts, 2);
+  }
+
+  // Расширение: управление яркостью LED
+  // int brightness = map(raw, 0, 1023, 0, 255);
+  // analogWrite(9, brightness);  // пин 9 — PWM
+
+Alternatives:
+  - Джойстик: два потенциометра (X и Y) на A0 и A1 + кнопка на цифровом пине
+  - analogReference(INTERNAL): опорное напряжение 1.1V вместо 5V — выше точность
+    для малых сигналов (датчики температуры, давления)
+  - Фоторезистор (LDR) вместо потенциометра: то же подключение, реагирует на свет
+  - Термистор NTC: то же подключение + формула Стейнхарта-Харта для температуры

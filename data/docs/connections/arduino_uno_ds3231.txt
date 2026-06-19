@@ -1,0 +1,36 @@
+Board: Arduino Uno
+Component: DS3231 RTC module
+Logic level: 5V (модуль имеет встроенный регулятор, совместим с 3.3V и 5V логикой)
+
+Wiring:
+  DS3231 VCC -> 5V
+  DS3231 GND -> GND
+  DS3231 SDA -> A4
+  DS3231 SCL -> A5
+
+Notes:
+  - I2C адрес DS3231 фиксированный: 0x68 — не настраивается.
+  - Модуль имеет встроенную батарею CR2032 — время сохраняется при отключении питания.
+  - SDA = A4, SCL = A5 на Uno/Nano. На Mega: SDA = 20, SCL = 21.
+  - Можно подключать на одну шину с другими I2C устройствами (например SSD1306 0x3C) —
+    адреса не пересекаются.
+  - Требуется библиотека "RTClib" by Adafruit.
+  - При первом запуске установить время через rtc.adjust(), затем закомментировать
+    эту строку — иначе время будет сбрасываться при каждом перезапуске.
+
+Code snippet:
+  #include <Wire.h>
+  #include <RTClib.h>
+
+  RTC_DS3231 rtc;
+
+  void setup() {
+    if (!rtc.begin()) {
+      while (true);  // RTC не найден
+    }
+    // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));  // только при первом запуске
+  }
+
+  void loop() {
+    DateTime now = rtc.now();
+  }

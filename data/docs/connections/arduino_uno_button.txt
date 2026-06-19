@@ -1,0 +1,29 @@
+Board: Arduino Uno
+Component: Тактовая кнопка
+Logic level: 5V
+
+Wiring:
+  Кнопка нога 1 -> D2
+  Кнопка нога 2 -> GND
+
+  (с использованием INPUT_PULLUP резистор не нужен)
+
+Notes:
+  - С pinMode(pin, INPUT_PULLUP) логика инвертирована: LOW = нажато, HIGH = отпущено.
+  - Без INPUT_PULLUP и без внешнего резистора пин "плавает" — читает случайные значения.
+  - Альтернатива: внешний резистор 10 кОм между сигнальным пином и 5V (pull-up),
+    тогда кнопка подключается между пином и GND — логика та же (LOW = нажато).
+  - Механические кнопки дребезжат — для подсчёта нажатий нужен debounce
+    (программный, через millis(), задержка ~50 мс).
+  - D2 и D3 на Uno поддерживают аппаратные прерывания (attachInterrupt).
+
+Code snippet:
+  const int BTN_PIN = 2;
+
+  void setup() {
+    pinMode(BTN_PIN, INPUT_PULLUP);
+  }
+
+  void loop() {
+    bool pressed = (digitalRead(BTN_PIN) == LOW);
+  }

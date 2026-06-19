@@ -1,0 +1,41 @@
+Board: ESP32 (DevKit V1)
+Component: L298N (dual H-bridge motor driver)
+Logic level: 3.3V сигнал, L298N принимает его как HIGH корректно
+
+Wiring:
+  L298N IN1 -> GPIO27
+  L298N IN2 -> GPIO26
+  L298N IN3 -> GPIO25
+  L298N IN4 -> GPIO33
+  L298N ENA -> GPIO14  (LEDC PWM — скорость мотора A)
+  L298N ENB -> GPIO32  (LEDC PWM — скорость мотора B)
+  L298N GND -> GND (ОБЯЗАТЕЛЬНО общий с ESP32)
+
+  L298N VIN -> + внешнего источника питания (7-12V)
+  L298N GND -> - внешнего источника питания
+  L298N 5V  -> 5V ESP32 (опционально, питание платы от регулятора L298N)
+  L298N OUT1/OUT2 -> мотор A
+  L298N OUT3/OUT4 -> мотор B
+
+Notes:
+  - ESP32 НЕ имеет analogWrite() — используй LEDC: ledcAttach(pin, freq, res) + ledcWrite(pin, duty).
+  - Общий GND между ESP32 и L298N обязателен.
+  - GPIO32 выбран вместо GPIO12, так как GPIO12 — strapping pin
+    (должен быть LOW при загрузке, иначе плата может не запуститься).
+  - НЕ питать моторы от 3.3V/5V пинов ESP32 — повредит плату при нагрузке.
+  - Джампер ENA/ENB на L298N — снять для управления скоростью через PWM.
+
+Code snippet:
+  const int IN1 = 27, IN2 = 26, ENA = 14;
+
+  void setup() {
+    pinMode(IN1, OUTPUT);
+    pinMode(IN2, OUTPUT);
+    ledcAttach(ENA, 1000, 8);  // частота 1кГц, разрешение 8 бит
+  }
+
+  void motorForward(int speed) {
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
+    ledcWrite(ENA, speed);  // 0-255
+  }

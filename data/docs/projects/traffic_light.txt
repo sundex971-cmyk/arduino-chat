@@ -1,0 +1,95 @@
+Project: Traffic Light
+Difficulty: beginner
+Tags: led, digitalWrite, millis, timing, no-library
+
+Description:
+  Светофор с тремя светодиодами (красный, жёлтый, зелёный).
+  Использует millis() вместо delay() чтобы не блокировать loop —
+  это позволяет добавить кнопку пешехода или датчик без переписывания логики.
+
+Components:
+  - Arduino Uno
+  - Светодиод красный (1 шт.)
+  - Светодиод жёлтый (1 шт.)
+  - Светодиод зелёный (1 шт.)
+  - Резистор 220 Ом (3 шт.)
+  - Breadboard
+  - Провода
+
+Connections:
+  Красный LED  анод -> резистор 220 Ом -> D9
+  Жёлтый LED   анод -> резистор 220 Ом -> D8
+  Зелёный LED  анод -> резистор 220 Ом -> D7
+  Все LED      катод -> GND
+
+Warnings:
+  - Никогда не подключать LED без резистора — сгорит светодиод и/или пин.
+  - Пин Arduino Uno выдаёт максимум 40 мА, рекомендуется 20 мА.
+    При 5V и Vf=2V: R = (5-2)/0.02 = 150 Ом → берём ближайший стандарт 220 Ом.
+  - Не использовать пины 0 и 1 — они заняты Serial (TX/RX).
+  - delay() блокирует весь loop — в этом проекте используется millis().
+
+Code:
+  const int PIN_RED   = 9;
+  const int PIN_YELLOW = 8;
+  const int PIN_GREEN  = 7;
+
+  // Длительности фаз в миллисекундах
+  const unsigned long T_RED    = 5000;
+  const unsigned long T_YELLOW = 1500;
+  const unsigned long T_GREEN  = 4000;
+
+  enum Phase { RED, YELLOW, GREEN };
+  Phase currentPhase = RED;
+  unsigned long phaseStart = 0;
+
+  void setLights(bool r, bool y, bool g) {
+    digitalWrite(PIN_RED,    r ? HIGH : LOW);
+    digitalWrite(PIN_YELLOW, y ? HIGH : LOW);
+    digitalWrite(PIN_GREEN,  g ? HIGH : LOW);
+  }
+
+  void setup() {
+    pinMode(PIN_RED,    OUTPUT);
+    pinMode(PIN_YELLOW, OUTPUT);
+    pinMode(PIN_GREEN,  OUTPUT);
+    phaseStart = millis();
+    setLights(true, false, false);  // начинаем с красного
+  }
+
+  void loop() {
+    unsigned long now = millis();
+    unsigned long elapsed = now - phaseStart;
+
+    switch (currentPhase) {
+      case RED:
+        if (elapsed >= T_RED) {
+          currentPhase = GREEN;
+          phaseStart = now;
+          setLights(false, false, true);
+        }
+        break;
+
+      case GREEN:
+        if (elapsed >= T_GREEN) {
+          currentPhase = YELLOW;
+          phaseStart = now;
+          setLights(false, true, false);
+        }
+        break;
+
+      case YELLOW:
+        if (elapsed >= T_YELLOW) {
+          currentPhase = RED;
+          phaseStart = now;
+          setLights(true, false, false);
+        }
+        break;
+    }
+  }
+
+Alternatives:
+  - Добавить кнопку пешехода: прервать зелёную фазу и перейти на жёлтый → красный
+  - Использовать shift register 74HC595 если нужно больше светофоров на меньших пинах
+  - NeoPixel (WS2812B): один пин вместо трёх, RGB в одном корпусе
+  - Использовать delay() вместо millis() — проще, но блокирует loop полностью

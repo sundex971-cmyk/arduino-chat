@@ -1,0 +1,42 @@
+Board: Arduino Uno
+Component: L298N (dual H-bridge motor driver)
+Logic level: 5V
+
+Wiring:
+  L298N IN1 -> D7
+  L298N IN2 -> D6
+  L298N IN3 -> D5
+  L298N IN4 -> D4
+  L298N ENA -> D9   (PWM — скорость мотора A)
+  L298N ENB -> D10  (PWM — скорость мотора B)
+  L298N GND -> GND  (ОБЯЗАТЕЛЬНО общий с Arduino)
+  L298N 5V  -> 5V Arduino (опционально, питание платы от регулятора L298N)
+
+  L298N VIN -> + внешнего источника питания (7-12V)
+  L298N GND -> - внешнего источника питания
+  L298N OUT1/OUT2 -> мотор A
+  L298N OUT3/OUT4 -> мотор B
+
+Notes:
+  - Общий GND между Arduino и L298N обязателен — без него сигналы IN1-IN4 не работают.
+  - НЕ питать моторы от 5V пина Arduino — встроенный регулятор сгорит при нагрузке.
+  - ENA/ENB должны быть на PWM-пинах Uno: 3, 5, 6, 9, 10, 11.
+  - Джампер ENA/ENB на плате L298N — снять, если управляешь скоростью через analogWrite().
+    Если джампер установлен — мотор всегда работает на полной скорости.
+  - L298N теряет ~2V на внутренних транзисторах — итоговое напряжение на моторе
+    будет на 2V меньше входного.
+
+Code snippet:
+  const int IN1 = 7, IN2 = 6, ENA = 9;
+
+  void setup() {
+    pinMode(IN1, OUTPUT);
+    pinMode(IN2, OUTPUT);
+    pinMode(ENA, OUTPUT);
+  }
+
+  void motorForward(int speed) {
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
+    analogWrite(ENA, speed);  // 0-255
+  }

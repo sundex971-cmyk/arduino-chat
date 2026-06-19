@@ -1,0 +1,201 @@
+# Weather Station
+
+Category:
+STEAM Project / Monitoring System
+
+Difficulty:
+Beginner - Intermediate
+
+
+## Project description
+
+Weather Station is a monitoring system that measures environmental conditions.
+
+The system collects temperature, humidity and optionally pressure data and displays the results.
+
+
+## Learning goals
+
+This project teaches:
+
+- working with environmental sensors;
+- displaying data;
+- reading digital sensors;
+- creating monitoring systems.
+
+
+
+## Main components
+
+
+Microcontroller:
+
+Arduino Uno or ESP32
+
+
+Temperature and humidity sensor:
+
+DHT11 or DHT22
+
+
+Display:
+
+OLED SSD1306
+
+
+Optional sensors:
+
+- BMP280 / BME280 pressure sensor
+- Light sensor LDR
+- SD card module for data logging
+
+
+
+## How it works
+
+
+1. DHT sensor measures temperature and humidity.
+
+
+2. Microcontroller reads sensor data.
+
+
+3. Data is processed.
+
+
+4. Values are displayed on OLED screen.
+
+
+5. System repeats measurements.
+
+
+
+## Hardware connection
+
+
+### Arduino Uno + DHT11
+
+
+DHT11:
+
+
+VCC → 5V
+
+GND → GND
+
+DATA → D2
+
+
+
+### Arduino Uno + OLED SSD1306
+
+
+OLED:
+
+
+VCC → 5V
+
+GND → GND
+
+SDA → A4
+
+SCL → A5
+
+
+
+## ESP32 notes
+
+
+ESP32 uses I2C communication.
+
+Typical pins:
+
+SDA → GPIO21
+
+SCL → GPIO22
+
+
+
+## Program logic
+
+
+Start system
+
+
+↓
+
+Initialize sensors
+
+
+↓
+
+Read temperature and humidity
+
+
+↓
+
+Display values
+
+
+↓
+
+Wait
+
+
+↓
+
+Repeat
+
+
+
+## Example display
+
+
+Temperature:
+
+25°C
+
+
+Humidity:
+
+45%
+
+
+
+## Possible improvements
+
+
+Beginner:
+
+- Add LED warning indicator
+
+
+Intermediate:
+
+- Add pressure sensor
+- Save measurements
+
+
+Advanced:
+
+- Send data using WiFi
+- Create web dashboard
+
+
+
+## Common mistakes
+
+
+- Wrong sensor library
+- Wrong OLED I2C address
+- Connecting SDA/SCL incorrectly
+- Reading sensor too often
+
+
+
+## Safety notes
+
+
+Environmental sensors are low-power devices.
+
+Avoid exposing electronics to water without protection.

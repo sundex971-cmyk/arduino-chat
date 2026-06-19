@@ -1,0 +1,34 @@
+Board: ESP32 (DevKit V1)
+Component: OLED SSD1306 128x64 (I2C)
+Logic level: 3.3V — большинство модулей SSD1306 поддерживают 3.3V-5V
+
+Wiring:
+  SSD1306 VCC -> 3.3V
+  SSD1306 GND -> GND
+  SSD1306 SDA -> GPIO21 (дефолтный SDA на ESP32)
+  SSD1306 SCL -> GPIO22 (дефолтный SCL на ESP32)
+
+Notes:
+  - I2C адрес: 0x3C (чаще всего) или 0x3D — как и на Arduino.
+  - На ESP32 пины I2C можно переназначить через Wire.begin(sda, scl),
+    но GPIO21/22 — дефолт, менять не обязательно.
+  - Pull-up резисторы обычно уже есть на плате SSD1306.
+  - Требуются те же библиотеки: "Adafruit SSD1306" + "Adafruit GFX Library" —
+    они кросс-платформенные и работают одинаково на Arduino и ESP32.
+  - При питании от 3.3V яркость и контраст дисплея не отличаются от 5V.
+
+Code snippet:
+  #include <Wire.h>
+  #include <Adafruit_GFX.h>
+  #include <Adafruit_SSD1306.h>
+
+  Adafruit_SSD1306 display(128, 64, &Wire, -1);
+
+  void setup() {
+    Wire.begin(21, 22);
+    if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+      while (true);  // инициализация не удалась
+    }
+    display.clearDisplay();
+    display.display();
+  }

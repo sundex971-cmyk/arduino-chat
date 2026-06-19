@@ -1,0 +1,35 @@
+Board: Arduino Uno
+Component: HC-SR04 (ultrasonic distance sensor)
+Logic level: 5V
+
+Wiring:
+  HC-SR04 VCC  -> 5V
+  HC-SR04 GND  -> GND
+  HC-SR04 TRIG -> D6
+  HC-SR04 ECHO -> D7
+
+Notes:
+  - HC-SR04 работает от 5V, логические уровни тоже 5V — совместимо с Uno напрямую.
+  - TRIG и ECHO можно подключать к любым digital пинам, кроме 0 и 1 (заняты Serial).
+  - Минимальная измеряемая дистанция: ~2 см, максимальная: ~400 см.
+  - pulseIn() на ECHO требует таймаут (например 30000 мкс), иначе при отсутствии
+    отражённого сигнала код зависнет на 1 секунду по умолчанию.
+
+Code snippet:
+  const int TRIG_PIN = 6;
+  const int ECHO_PIN = 7;
+
+  void setup() {
+    pinMode(TRIG_PIN, OUTPUT);
+    pinMode(ECHO_PIN, INPUT);
+  }
+
+  long getDistanceCm() {
+    digitalWrite(TRIG_PIN, LOW);
+    delayMicroseconds(2);
+    digitalWrite(TRIG_PIN, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(TRIG_PIN, LOW);
+    long duration = pulseIn(ECHO_PIN, HIGH, 30000);
+    return duration * 0.034 / 2;
+  }

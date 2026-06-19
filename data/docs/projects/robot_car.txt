@@ -1,0 +1,212 @@
+# Robot Car
+
+Category:
+STEAM Project / Robotics
+
+Difficulty:
+Intermediate
+
+
+## Project description
+
+Robot Car is a small autonomous or remote-controlled vehicle.
+
+The project uses motors, motor drivers and sensors to control movement.
+
+
+## Learning goals
+
+This project teaches:
+
+- motor control;
+- PWM signals;
+- robotics basics;
+- sensor integration.
+
+
+
+## Main components
+
+
+Microcontroller:
+
+Arduino Uno or ESP32
+
+
+Motor driver:
+
+L298N
+
+
+Motors:
+
+DC motors
+
+
+Power:
+
+Battery pack
+
+
+Optional components:
+
+- HC-SR04 ultrasonic sensor
+- Bluetooth module HC-05
+- Servo motor
+- Line tracking sensors
+
+
+
+## How it works
+
+
+1. Arduino sends control signals to motor driver.
+
+
+2. Motor driver provides power to motors.
+
+
+3. Motors rotate and move the vehicle.
+
+
+4. Sensors can provide information about obstacles.
+
+
+
+## Hardware connection
+
+
+### Arduino Uno + L298N
+
+
+Motor driver:
+
+
+IN1 → D5
+
+IN2 → D6
+
+IN3 → D9
+
+IN4 → D10
+
+
+
+Motor outputs:
+
+OUT1/OUT2 → Motor A
+
+OUT3/OUT4 → Motor B
+
+
+
+## HC-SR04 obstacle detection
+
+
+Sensor:
+
+
+VCC → 5V
+
+GND → GND
+
+TRIG → D7
+
+ECHO → D8
+
+
+
+## ESP32 notes
+
+
+ESP32 can control motors using PWM.
+
+Use a proper motor driver.
+
+Do not power motors directly from GPIO pins.
+
+
+
+## Program logic
+
+
+Start system
+
+
+↓
+
+Read control input or sensors
+
+
+↓
+
+Calculate movement
+
+
+↓
+
+Send commands to motors
+
+
+↓
+
+Repeat
+
+
+
+## Example behaviors
+
+
+Forward:
+
+Both motors rotate forward
+
+
+Backward:
+
+Both motors rotate backward
+
+
+Turn:
+
+One motor changes direction
+
+
+
+## Possible improvements
+
+
+Beginner:
+
+- Add Bluetooth control
+
+
+Intermediate:
+
+- Add obstacle avoidance
+
+
+Advanced:
+
+- Add camera
+- Add autonomous navigation
+- Use ESP32 AI features
+
+
+
+## Common mistakes
+
+
+- Connecting motors directly to Arduino pins
+- Insufficient power supply
+- No common GND
+- Wrong motor driver wiring
+
+
+
+## Safety notes
+
+
+Motors require more current than Arduino GPIO pins can provide.
+
+Always use a motor driver.

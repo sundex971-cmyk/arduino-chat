@@ -1,0 +1,89 @@
+Project: Distance Alarm
+Difficulty: beginner
+Tags: hc-sr04, ultrasonic, buzzer, pulseIn, tone, no-library
+
+Description:
+  HC-SR04 измеряет расстояние до объекта. Если объект ближе 20 см —
+  зуммер пищит, частота писка увеличивается по мере приближения.
+  Расстояние выводится в Serial Monitor.
+
+Components:
+  - Arduino Uno
+  - HC-SR04 (ультразвуковой датчик расстояния)
+  - Пассивный зуммер (1 шт.)
+  - Резистор 100 Ом (1 шт.) — для зуммера
+  - Провода
+  - Breadboard
+
+Connections:
+  HC-SR04 VCC  -> 5V
+  HC-SR04 GND  -> GND
+  HC-SR04 TRIG -> D6
+  HC-SR04 ECHO -> D7
+
+  Зуммер + -> резистор 100 Ом -> D8
+  Зуммер - -> GND
+
+Warnings:
+  - HC-SR04 работает от 5V. На ESP32 (3.3V GPIO) пин ECHO нужно защитить
+    делителем напряжения: резисторы 1 кОм и 2 кОм между ECHO и GND,
+    средняя точка идёт на GPIO ESP32.
+  - pulseIn() блокирует выполнение до получения импульса или таймаута.
+    Таймаут по умолчанию 1 секунда — указывай явно (30000 мкс = 5 м).
+  - При расстоянии > 4 метра HC-SR04 не надёжен.
+    pulseIn() вернёт 0 — проверяй это условие.
+  - tone() конфликтует с analogWrite() на пинах 3 и 11 (Timer2 на Uno).
+  - Не направляй датчик на мягкие/наклонные поверхности — звук поглощается
+    или отражается в сторону, расстояние будет некорректным.
+  - Минимальное расстояние HC-SR04: ~2 см. Ближе — результат ненадёжен.
+
+Code:
+  const int TRIG_PIN   = 6;
+  const int ECHO_PIN   = 7;
+  const int BUZZER_PIN = 8;
+  const int THRESHOLD  = 20;   // см — порог срабатывания
+  const int MAX_DIST   = 400;  // см — максимум HC-SR04
+
+  long measureDistance() {
+    digitalWrite(TRIG_PIN, LOW);
+    delayMicroseconds(2);
+    digitalWrite(TRIG_PIN, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(TRIG_PIN, LOW);
+
+    long duration = pulseIn(ECHO_PIN, HIGH, 30000);  // таймаут 30 мс = ~5 м
+    if (duration == 0) return MAX_DIST;              // объект не обнаружен
+    return duration * 0.034 / 2;                     // мкс → см
+  }
+
+  void setup() {
+    pinMode(TRIG_PIN,   OUTPUT);
+    pinMode(ECHO_PIN,   INPUT);
+    pinMode(BUZZER_PIN, OUTPUT);
+    Serial.begin(9600);
+  }
+
+  void loop() {
+    long dist = measureDistance();
+
+    Serial.print("Distance: ");
+    Serial.print(dist);
+    Serial.println(" cm");
+
+    if (dist < THRESHOLD) {
+      // Чем ближе — тем выше частота писка
+      int freq = map(dist, 1, THRESHOLD, 2000, 500);
+      tone(BUZZER_PIN, freq, 100);
+    } else {
+      noTone(BUZZER_PIN);
+    }
+
+    delay(100);
+  }
+
+Alternatives:
+  - VL53L0X (I2C лазерный ToF): точнее, до 2 м, не зависит от материала поверхности
+  - Sharp GP2Y0A21 (аналоговый IR): проще подключение (analogRead), но нелинейный
+  - Активный зуммер вместо пассивного: только ON/OFF без управления частотой
+  - Добавить RGB LED: красный при опасном расстоянии, жёлтый при среднем, зелёный при безопасном
+  - Добавить OLED дисплей: показывать расстояние графически

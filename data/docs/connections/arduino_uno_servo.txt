@@ -1,0 +1,29 @@
+Board: Arduino Uno
+Component: Servo SG90
+Logic level: 5V
+
+Wiring:
+  Servo signal (оранжевый/жёлтый) -> резистор 470 Ом -> D9
+  Servo VCC (красный)             -> внешний источник 5V (НЕ от Arduino при нагрузке)
+  Servo GND (коричневый/чёрный)   -> GND (общий с Arduino)
+
+Notes:
+  - Один SG90 без нагрузки можно питать от 5V пина Arduino — потребление мало.
+  - При вращении под нагрузкой или нескольких серво — обязателен внешний источник.
+  - Резистор 470 Ом на сигнальной линии защищает пин от выбросов тока при старте серво.
+  - Используй любой PWM-совместимый пин: 3, 5, 6, 9, 10, 11.
+  - Библиотека Servo.h встроена в Arduino IDE, отдельно ставить не нужно.
+  - Servo.h на Uno использует Timer1 — конфликтует с analogWrite() на пинах 9 и 10.
+
+Code snippet:
+  #include <Servo.h>
+
+  Servo myServo;
+
+  void setup() {
+    myServo.attach(9);
+  }
+
+  void loop() {
+    myServo.write(90);  // угол 0-180
+  }

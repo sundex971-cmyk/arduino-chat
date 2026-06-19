@@ -1,0 +1,30 @@
+Board: Arduino Uno
+Component: Светодиод (LED)
+Logic level: 5V
+
+Wiring:
+  LED анод (длинная нога)  -> резистор 220 Ом -> D13
+  LED катод (короткая нога) -> GND
+
+Notes:
+  - Резистор обязателен — без него LED и/или пин выходят из строя.
+  - Расчёт резистора: R = (Vcc - Vf) / If.
+    Для красного LED (Vf≈2V) при 5V и токе 20мА: R = (5-2)/0.02 = 150 Ом.
+    Берётся ближайший стандартный номинал — 220 Ом (запас по току).
+  - Максимальный ток с пина Uno: 40 мА (абсолютный максимум), 20 мА рекомендуется.
+  - Любой digital пин подходит, кроме 0 и 1 (заняты Serial).
+  - Для управления яркостью использовать PWM-пины: 3, 5, 6, 9, 10, 11 с analogWrite().
+
+Code snippet:
+  const int LED_PIN = 13;
+
+  void setup() {
+    pinMode(LED_PIN, OUTPUT);
+  }
+
+  void loop() {
+    digitalWrite(LED_PIN, HIGH);
+    delay(500);
+    digitalWrite(LED_PIN, LOW);
+    delay(500);
+  }

@@ -1,0 +1,205 @@
+# Smart Lamp
+
+Category:
+STEAM Project / Automation
+
+Difficulty:
+Beginner
+
+
+## Project description
+
+Smart Lamp is an automatic lighting system.
+
+The system measures the amount of light in the environment and automatically turns an LED or lamp on when it becomes dark.
+
+
+## Learning goals
+
+This project teaches:
+
+- reading analog sensors;
+- using conditions;
+- controlling output devices;
+- creating automatic systems.
+
+
+
+## Main components
+
+
+Microcontroller:
+
+Arduino Uno or ESP32
+
+
+Light sensor:
+
+LDR (photoresistor)
+
+
+Output:
+
+LED
+
+or
+
+Relay module for controlling a real lamp
+
+
+Optional components:
+
+- Potentiometer for brightness adjustment
+- OLED display
+- Button for manual mode
+
+
+
+## How it works
+
+
+1. LDR sensor measures the amount of light.
+
+
+2. Arduino reads the analog value.
+
+
+3. The value is compared with a threshold.
+
+
+4. If the environment is dark:
+
+LED turns on.
+
+
+5. If there is enough light:
+
+LED turns off.
+
+
+
+## Hardware connection
+
+
+### Arduino Uno + LDR
+
+
+LDR voltage divider:
+
+
+5V → LDR → Analog pin A0 → Resistor → GND
+
+
+
+### Arduino Uno + LED
+
+
+LED:
+
+Long leg → resistor → D9
+
+Short leg → GND
+
+
+
+## ESP32 notes
+
+
+ESP32 uses 3.3V logic.
+
+When using sensors:
+
+Check sensor output voltage before connecting to GPIO pins.
+
+
+
+## Program logic
+
+
+Start system
+
+
+↓
+
+Read light value
+
+
+↓
+
+Compare value with threshold
+
+
+↓
+
+If dark:
+
+Turn LED ON
+
+
+↓
+
+Else:
+
+Turn LED OFF
+
+
+↓
+
+Repeat
+
+
+
+## Example parameters
+
+
+Darkness threshold:
+
+Depends on LDR calibration
+
+
+LED brightness:
+
+Controlled using PWM
+
+
+
+## Possible improvements
+
+
+Beginner:
+
+- Add button to switch modes
+- Add multiple LEDs
+
+
+Intermediate:
+
+- Add OLED display with light level
+- Add potentiometer adjustment
+
+
+Advanced:
+
+- Use ESP32 WiFi control
+- Create smart home integration
+
+
+
+## Common mistakes
+
+
+- Connecting LDR without voltage divider
+- Using wrong threshold value
+- Connecting LED without resistor
+- Forgetting common GND
+
+
+
+## Safety notes
+
+
+For controlling real lamps:
+
+Use relay modules and proper electrical protection.
+
+Do not connect mains voltage directly to Arduino.

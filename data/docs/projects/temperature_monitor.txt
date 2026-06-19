@@ -1,0 +1,88 @@
+Project: Temperature Monitor
+Difficulty: beginner
+Tags: dht22, temperature, humidity, serial, no-spi, no-i2c
+
+Description:
+  DHT22 считывает температуру и влажность каждые 2 секунды
+  и выводит данные в Serial Monitor. Простейший проект с датчиком окружающей среды.
+
+Components:
+  - Arduino Uno
+  - DHT22 (датчик температуры и влажности)
+  - Резистор 10 кОм (1 шт.) — pull-up на DATA
+  - Провода
+  - Breadboard
+
+Connections:
+  DHT22 пин 1 (VCC)  -> 5V
+  DHT22 пин 2 (DATA) -> D2
+  DHT22 пин 2 (DATA) -> резистор 10 кОм -> 5V  (pull-up)
+  DHT22 пин 3        -> не подключать
+  DHT22 пин 4 (GND)  -> GND
+
+  Упрощённо для модулей DHT22 с тремя пинами (уже с резистором на плате):
+  VCC -> 5V
+  DATA -> D2
+  GND -> GND
+
+Libraries:
+  - DHT sensor library by Adafruit (Library Manager)
+  - Adafruit Unified Sensor (зависимость, ставится автоматически)
+
+Warnings:
+  - DHT22 минимальный интервал опроса — 2 секунды. Читать чаще нельзя —
+    датчик вернёт NaN или старое значение.
+  - Всегда проверяй isnan() перед использованием значений — датчик может
+    не ответить при плохом контакте или слишком частом опросе.
+  - Pull-up резистор 10 кОм на DATA обязателен для голого датчика DHT22.
+    Модули с тремя пинами обычно уже имеют его на плате.
+  - DHT22 точнее DHT11: ±0.5°C и ±2-5% влажность против ±2°C и ±5%.
+  - Диапазон DHT22: -40°C до +80°C, 0-100% влажность.
+  - Не путай DHT11 (синий) и DHT22 (белый) — в коде нужно указать правильный тип.
+
+Code:
+  #include <DHT.h>
+
+  #define DHT_PIN  2
+  #define DHT_TYPE DHT22  // DHT11 если используешь DHT11
+
+  DHT dht(DHT_PIN, DHT_TYPE);
+
+  void setup() {
+    Serial.begin(9600);
+    dht.begin();
+    Serial.println("DHT22 Temperature Monitor");
+    Serial.println("Time(ms) | Temp(C) | Humidity(%)");
+  }
+
+  void loop() {
+    delay(2000);  // минимум 2 сек между чтениями
+
+    float temp = dht.readTemperature();
+    float hum  = dht.readHumidity();
+
+    if (isnan(temp) || isnan(hum)) {
+      Serial.println("Error: failed to read DHT22");
+      return;
+    }
+
+    Serial.print(millis());
+    Serial.print(" ms | ");
+    Serial.print(temp, 1);
+    Serial.print(" C | ");
+    Serial.print(hum, 1);
+    Serial.println(" %");
+
+    // Вычислить точку росы (приближённо)
+    float dewPoint = temp - (100 - hum) / 5.0;
+    Serial.print("Dew point: ");
+    Serial.print(dewPoint, 1);
+    Serial.println(" C");
+  }
+
+Alternatives:
+  - DHT11 вместо DHT22: дешевле, но менее точный и меньший диапазон
+  - BME280: добавляет атмосферное давление, точнее, I2C (не нужен pull-up)
+  - DS18B20: только температура, зато точность ±0.5°C, несколько датчиков на 1 пине
+  - Добавить LCD 16x2: показывать данные без компьютера
+  - Добавить SD карту: логировать данные (см. проект Data Logger)

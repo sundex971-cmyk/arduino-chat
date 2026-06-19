@@ -1,0 +1,37 @@
+Board: ESP32 (DevKit V1)
+Component: BME280 (temperature, humidity, pressure sensor, I2C)
+Logic level: 3.3V — ВАЖНО, BME280 НЕ толерантен к 5V
+
+Wiring:
+  BME280 VCC -> 3.3V (НЕ 5V — сожжёт датчик)
+  BME280 GND -> GND
+  BME280 SDA -> GPIO21 (дефолтный SDA на ESP32)
+  BME280 SCL -> GPIO22 (дефолтный SCL на ESP32)
+
+Notes:
+  - BME280 рассчитан только на 3.3V питание. Подключение к 5V повреждает датчик.
+  - I2C адрес: 0x76 (SDO к GND, чаще всего на модулях по умолчанию) или
+    0x77 (SDO к VCC).
+  - Требуются библиотеки: "Adafruit BME280 Library" + "Adafruit Unified Sensor".
+  - При активном WiFi можно использовать I2C без ограничений — конфликт
+    касается только ADC2 пинов, не I2C.
+  - GPIO21/22 — безопасный выбор, не strapping pins.
+
+Code snippet:
+  #include <Wire.h>
+  #include <Adafruit_BME280.h>
+
+  Adafruit_BME280 bme;
+
+  void setup() {
+    Wire.begin(21, 22);
+    if (!bme.begin(0x76)) {
+      while (true);  // датчик не найден
+    }
+  }
+
+  void loop() {
+    float temp = bme.readTemperature();
+    float hum  = bme.readHumidity();
+    float pres = bme.readPressure() / 100.0F;  // гПа
+  }

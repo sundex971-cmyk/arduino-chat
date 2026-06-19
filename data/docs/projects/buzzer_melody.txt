@@ -1,0 +1,89 @@
+Project: Buzzer Melody
+Difficulty: beginner
+Tags: buzzer, tone, noTone, no-library, sound
+
+Description:
+  Пассивный зуммер воспроизводит мелодию "Twinkle Twinkle Little Star"
+  через функцию tone(). Частота ноты и длительность задаются массивами.
+
+Components:
+  - Arduino Uno
+  - Пассивный зуммер (1 шт.)
+  - Резистор 100 Ом (1 шт.) — защита пина
+  - Провода
+  - Breadboard
+
+Connections:
+  Зуммер + -> резистор 100 Ом -> D8
+  Зуммер - -> GND
+
+Warnings:
+  - Пассивный зуммер и активный зуммер — разные компоненты.
+    Активный зуммер пищит сам при подаче питания, tone() на нём не работает.
+    Отличие: у активного обычно есть маркировка + на корпусе и он издаёт звук
+    при подключении к 5V напрямую. Пассивный — молчит без сигнала.
+  - tone() использует Timer2 на Uno — конфликтует с analogWrite() на пинах 3 и 11.
+    Пока играет мелодия — PWM на пинах 3 и 11 не работает.
+  - noTone() обязателен между нотами и в конце — иначе зуммер продолжает звучать.
+  - Резистор 100 Ом защищает пин от перегрузки по току зуммером.
+  - tone() нельзя использовать одновременно на двух пинах — только один канал.
+
+Code:
+  const int BUZZER_PIN = 8;
+
+  // Частоты нот (Гц)
+  #define NOTE_C4  262
+  #define NOTE_D4  294
+  #define NOTE_E4  330
+  #define NOTE_F4  349
+  #define NOTE_G4  392
+  #define NOTE_A4  440
+
+  // Мелодия: Twinkle Twinkle Little Star
+  int melody[] = {
+    NOTE_C4, NOTE_C4, NOTE_G4, NOTE_G4,
+    NOTE_A4, NOTE_A4, NOTE_G4, 0,
+    NOTE_F4, NOTE_F4, NOTE_E4, NOTE_E4,
+    NOTE_D4, NOTE_D4, NOTE_C4, 0
+  };
+
+  // Длительности: 4 = четверть, 8 = восьмая
+  int durations[] = {
+    4, 4, 4, 4,
+    4, 4, 2, 4,
+    4, 4, 4, 4,
+    4, 4, 2, 4
+  };
+
+  int noteCount = sizeof(melody) / sizeof(melody[0]);
+
+  void playMelody() {
+    for (int i = 0; i < noteCount; i++) {
+      int duration = 1000 / durations[i];
+
+      if (melody[i] == 0) {
+        noTone(BUZZER_PIN);
+      } else {
+        tone(BUZZER_PIN, melody[i], duration);
+      }
+
+      delay(duration * 1.3);  // пауза между нотами
+      noTone(BUZZER_PIN);
+    }
+  }
+
+  void setup() {
+    pinMode(BUZZER_PIN, OUTPUT);
+  }
+
+  void loop() {
+    playMelody();
+    delay(2000);  // пауза между повторениями
+  }
+
+Alternatives:
+  - Активный зуммер: только digitalWrite HIGH/LOW, без tone() — простой писк
+  - Библиотека pitches.h: полный список частот всех нот (есть в примерах Arduino IDE)
+  - Библиотека "Tone" для нескольких зуммеров одновременно
+  - DFPlayer Mini + динамик: воспроизведение MP3 файлов с microSD карты
+  - PWM на динамик через усилитель: более качественный звук

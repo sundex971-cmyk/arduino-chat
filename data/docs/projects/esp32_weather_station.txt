@@ -1,0 +1,130 @@
+Project: ESP32 Weather Station
+Difficulty: advanced
+Tags: esp32, wifi, bme280, i2c, http, thingspeak, adc2-warning
+
+Description:
+  Метеостанция на ESP32: каждые 30 секунд считывает температуру,
+  влажность и давление (BME280) и отправляет данные в облако ThingSpeak.
+  Данные доступны в браузере в реальном времени в виде графиков.
+
+Components:
+  - ESP32 DevKit V1 (или любой ESP32 модуль)
+  - BME280 (датчик температуры, влажности, давления — I2C)
+  - Провода (4 шт.)
+  - Breadboard
+  - Кабель USB для питания
+
+Connections:
+  BME280 VCC -> 3.3V  (ВАЖНО: не 5V — BME280 работает от 3.3V)
+  BME280 GND -> GND
+  BME280 SDA -> GPIO21  (дефолтный SDA на ESP32)
+  BME280 SCL -> GPIO22  (дефолтный SCL на ESP32)
+
+  Примечание: на ESP32 I2C пины можно переназначить через Wire.begin(sda, scl).
+  GPIO21/22 — дефолт, менять не нужно.
+
+Libraries:
+  - Adafruit BME280 Library (Library Manager)
+  - Adafruit Unified Sensor (зависимость, ставится автоматически)
+  - WiFi (встроена в ESP32 Arduino core)
+  - HTTPClient (встроена в ESP32 Arduino core)
+
+Warnings:
+  - BME280 работает от 3.3V. Подключение к 5V сожжёт датчик.
+  - ESP32 GPIO работают от 3.3V. Все периферийные устройства должны быть 3.3V-совместимы.
+  - ADC2 пины (GPIO0, 2, 4, 12-15, 25-27) нельзя использовать для analogRead
+    при активном WiFi — они заняты WiFi драйвером. Использовать только ADC1 (GPIO32-39).
+  - BME280 I2C адрес: 0x76 (SDO к GND) или 0x77 (SDO к VCC).
+    По умолчанию большинство модулей: 0x76.
+  - ThingSpeak бесплатный тариф: минимальный интервал записи — 15 секунд.
+    Отправлять чаще — данные будут отклоняться сервером.
+  - При потере WiFi код зависнет в WiFi.begin() loop — добавить таймаут.
+  - unsigned long для millis() — обязательно, иначе переполнение через 49 дней.
+
+Setup (ThingSpeak):
+  1. Зарегистрироваться на thingspeak.com
+  2. Создать новый Channel
+  3. Добавить поля: Field1=Temperature, Field2=Humidity, Field3=Pressure
+  4. Скопировать Write API Key в код
+
+Code:
+  #include <Wire.h>
+  #include <Adafruit_BME280.h>
+  #include <WiFi.h>
+  #include <HTTPClient.h>
+
+  const char* SSID     = "YOUR_WIFI_SSID";
+  const char* PASSWORD = "YOUR_WIFI_PASSWORD";
+  const char* API_KEY  = "YOUR_THINGSPEAK_WRITE_KEY";
+  const char* TS_URL   = "http://api.thingspeak.com/update";
+
+  const unsigned long SEND_INTERVAL = 30000UL;  // 30 секунд
+
+  Adafruit_BME280 bme;
+  unsigned long lastSend = 0;
+
+  void connectWiFi() {
+    Serial.print("Connecting to WiFi");
+    WiFi.begin(SSID, PASSWORD);
+    unsigned long start = millis();
+    while (WiFi.status() != WL_CONNECTED) {
+      if (millis() - start > 15000) {
+        Serial.println("WiFi timeout — restarting");
+        ESP.restart();
+      }
+      delay(500);
+      Serial.print(".");
+    }
+    Serial.println("\nConnected: " + WiFi.localIP().toString());
+  }
+
+  void sendToThingSpeak(float temp, float hum, float pres) {
+    if (WiFi.status() != WL_CONNECTED) connectWiFi();
+
+    HTTPClient http;
+    String url = String(TS_URL) +
+      "?api_key=" + API_KEY +
+      "&field1=" + String(temp, 2) +
+      "&field2=" + String(hum, 2) +
+      "&field3=" + String(pres / 100.0, 2);  // Па → гПа
+
+    http.begin(url);
+    int code = http.GET();
+    Serial.println(code > 0 ? "Sent OK: " + String(code) : "Send error");
+    http.end();
+  }
+
+  void setup() {
+    Serial.begin(115200);
+    Wire.begin(21, 22);
+
+    if (!bme.begin(0x76)) {
+      Serial.println("BME280 not found — check wiring and address");
+      while (true);
+    }
+
+    connectWiFi();
+    Serial.println("Weather station ready");
+  }
+
+  void loop() {
+    unsigned long now = millis();
+    if (now - lastSend < SEND_INTERVAL) return;
+    lastSend = now;
+
+    float temp = bme.readTemperature();
+    float hum  = bme.readHumidity();
+    float pres = bme.readPressure();
+
+    Serial.printf("T=%.2f°C H=%.2f%% P=%.2fhPa\n",
+                  temp, hum, pres / 100.0);
+
+    sendToThingSpeak(temp, hum, pres);
+  }
+
+Alternatives:
+  - MQTT + Mosquitto + Grafana: локальный сервер без облака, больше контроля
+  - Home Assistant: интеграция через ESPHome без написания кода
+  - DHT22 вместо BME280: дешевле, но нет давления и менее точный
+  - Добавить SSD1306: показывать данные локально без интернета
+  - Deep sleep между отправками: потребление ~10 мкА вместо ~80 мА

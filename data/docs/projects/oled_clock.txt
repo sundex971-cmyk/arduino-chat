@@ -1,0 +1,118 @@
+Project: OLED Clock with RTC
+Difficulty: intermediate
+Tags: i2c, oled, rtc, ds3231, ssd1306, wire, display
+
+Description:
+  Часы реального времени на дисплее OLED 128x64.
+  DS3231 хранит время даже при отключении питания (есть встроенная батарея CR2032).
+  SSD1306 и DS3231 висят на одной шине I2C — два устройства, два адреса, один кабель.
+
+Components:
+  - Arduino Uno
+  - OLED дисплей SSD1306 128x64 (I2C)
+  - RTC модуль DS3231 (с батареей CR2032)
+  - Провода (4 шт.)
+  - Breadboard (опционально)
+
+Connections:
+  SSD1306 VCC -> 3.3V (некоторые модули 5V — проверь маркировку)
+  SSD1306 GND -> GND
+  SSD1306 SDA -> A4
+  SSD1306 SCL -> A5
+
+  DS3231 VCC  -> 5V
+  DS3231 GND  -> GND
+  DS3231 SDA  -> A4  (та же линия SDA)
+  DS3231 SCL  -> A5  (та же линия SCL)
+
+  Примечание: подтягивающие резисторы 4.7 кОм на SDA и SCL к 3.3V/5V
+  обычно уже встроены в модули DS3231 и SSD1306. Дополнительные не нужны.
+
+Libraries:
+  - Adafruit SSD1306 (Install via Library Manager)
+  - Adafruit GFX Library (зависимость SSD1306, ставится автоматически)
+  - RTClib by Adafruit (Install via Library Manager)
+
+Warnings:
+  - I2C адрес SSD1306: 0x3C (чаще всего) или 0x3D — зависит от пайки резистора на модуле.
+    Если дисплей не инициализируется — попробуй второй адрес в begin().
+  - I2C адрес DS3231: 0x68 — фиксированный, не меняется.
+  - Конфликт адресов: два устройства с одинаковым адресом на одной шине — система зависнет.
+    SSD1306 (0x3C) и DS3231 (0x68) не конфликтуют.
+  - SDA/SCL на Uno — только A4/A5. На Mega: SDA=20, SCL=21. На Nano: A4/A5.
+  - Некоторые SSD1306 модули работают от 3.3V, другие от 5V — не перепутай.
+  - При первом запуске DS3231 нужно установить время (раскомментировать строку rtc.adjust).
+    После установки — закомментировать, иначе время будет сбрасываться при каждом reset.
+
+Code:
+  #include <Wire.h>
+  #include <Adafruit_GFX.h>
+  #include <Adafruit_SSD1306.h>
+  #include <RTClib.h>
+
+  #define SCREEN_WIDTH 128
+  #define SCREEN_HEIGHT 64
+  #define OLED_ADDR 0x3C
+
+  Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+  RTC_DS3231 rtc;
+
+  void setup() {
+    Serial.begin(9600);
+
+    // Инициализация дисплея
+    if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+      Serial.println("SSD1306 not found");
+      while (true);
+    }
+
+    // Инициализация RTC
+    if (!rtc.begin()) {
+      Serial.println("DS3231 not found");
+      while (true);
+    }
+
+    // Установить время ОДИН РАЗ, затем закомментировать:
+    // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+
+    display.clearDisplay();
+    display.setTextColor(SSD1306_WHITE);
+  }
+
+  void loop() {
+    DateTime now = rtc.now();
+
+    display.clearDisplay();
+
+    // Время — крупно
+    display.setTextSize(2);
+    display.setCursor(10, 10);
+    printTwoDigits(now.hour());
+    display.print(":");
+    printTwoDigits(now.minute());
+    display.print(":");
+    printTwoDigits(now.second());
+
+    // Дата — мелко
+    display.setTextSize(1);
+    display.setCursor(20, 45);
+    printTwoDigits(now.day());
+    display.print("/");
+    printTwoDigits(now.month());
+    display.print("/");
+    display.print(now.year());
+
+    display.display();
+    delay(500);
+  }
+
+  void printTwoDigits(int n) {
+    if (n < 10) display.print("0");
+    display.print(n);
+  }
+
+Alternatives:
+  - DS1307 вместо DS3231: дешевле, но менее точный и без температурной компенсации
+  - LCD 16x2 вместо OLED: дешевле, но нет графики; нужна библиотека LiquidCrystal_I2C
+  - NTP через ESP32/ESP8266: синхронизация по интернету, не нужна батарея
+  - TM1637 (4-сегментный дисплей): очень дёшево, только цифры, 2 пина

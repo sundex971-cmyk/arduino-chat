@@ -1,0 +1,233 @@
+# Smart Parking Barrier
+
+Category:
+STEAM Project / Automation
+
+Difficulty:
+Beginner - Intermediate
+
+
+## Project description
+
+Smart Parking Barrier is an automatic parking gate system.
+
+The project detects a vehicle approaching the entrance and automatically opens the barrier.
+
+After the vehicle passes, the system closes the barrier.
+
+
+## Learning goals
+
+This project teaches:
+
+- working with sensors;
+- reading distance values;
+- controlling servo motors;
+- using conditional logic;
+- building simple automation systems.
+
+
+
+## Main components
+
+
+Microcontroller:
+
+Arduino Uno or ESP32
+
+
+Distance sensor:
+
+HC-SR04 ultrasonic sensor
+
+
+Actuator:
+
+Servo SG90
+
+
+Optional components:
+
+- LED indicator
+- Buzzer
+- OLED display
+- Button for manual control
+
+
+
+## How it works
+
+
+1. HC-SR04 measures the distance to an object.
+
+
+2. The microcontroller receives the distance value.
+
+
+3. If the distance is smaller than the defined limit:
+
+The system detects a vehicle.
+
+
+4. Arduino sends a command to the servo motor.
+
+
+5. Servo rotates and opens the barrier.
+
+
+6. After a delay, the servo returns to the original position and closes the barrier.
+
+
+
+## Hardware connection
+
+
+### Arduino Uno + HC-SR04
+
+
+HC-SR04:
+
+VCC → 5V
+
+GND → GND
+
+TRIG → Digital pin D6
+
+ECHO → Digital pin D7
+
+
+
+### Arduino Uno + Servo SG90
+
+
+Servo:
+
+VCC → 5V
+
+GND → GND
+
+Signal → Digital pin D9
+
+
+
+## ESP32 notes
+
+
+ESP32 uses 3.3V GPIO logic.
+
+HC-SR04 ECHO pin outputs approximately 5V.
+
+When using HC-SR04 with ESP32:
+
+Use a voltage divider or logic level converter on the ECHO signal.
+
+
+
+## Program logic
+
+
+Basic algorithm:
+
+
+Start system
+
+
+↓
+
+Initialize ultrasonic sensor
+
+
+↓
+
+Initialize servo motor
+
+
+↓
+
+Measure distance
+
+
+↓
+
+If distance < threshold:
+
+Open barrier
+
+
+↓
+
+Wait
+
+
+↓
+
+Close barrier
+
+
+↓
+
+Repeat
+
+
+
+## Example parameters
+
+
+Detection distance:
+
+10-20 cm
+
+
+Opening angle:
+
+90 degrees
+
+
+Closing delay:
+
+3-5 seconds
+
+
+
+## Possible improvements
+
+
+Beginner:
+
+- Add LED indicator
+- Add buzzer sound
+
+
+Intermediate:
+
+- Add OLED display showing distance
+- Add manual open button
+
+
+Advanced:
+
+- Add RFID access control
+- Add WiFi monitoring using ESP32
+- Add camera recognition
+
+
+
+## Common mistakes
+
+
+- Connecting servo power directly from weak USB source
+- Forgetting common GND between components
+- Using HC-SR04 ECHO directly with ESP32 without voltage protection
+- Incorrect servo signal pin
+- Wrong distance threshold
+
+
+
+## Safety notes
+
+
+Do not connect real vehicle barriers directly to Arduino.
+
+This project is a small educational model.
+
+Industrial barriers require stronger motors, drivers and safety systems.

@@ -1,0 +1,30 @@
+Board: ESP32 (DevKit V1)
+Component: Servo SG90
+Logic level: сигнал 3.3V (большинство серво воспринимают как HIGH корректно)
+
+Wiring:
+  Servo signal (оранжевый/жёлтый) -> резистор 470 Ом -> GPIO13
+  Servo VCC (красный)             -> внешний источник 5V (НЕ от ESP32 3.3V пина)
+  Servo GND (коричневый/чёрный)   -> GND (общий с ESP32)
+
+Notes:
+  - ESP32 НЕ имеет Servo.h аналог Arduino "из коробки" в стандартном виде —
+    используется библиотека "ESP32Servo" (Library Manager), не встроенная Servo.h.
+  - Сигнал серво на 3.3V обычно распознаётся как HIGH (порог типично ~2V),
+    но при нестабильной работе можно добавить логический преобразователь уровня.
+  - GPIO13 — безопасный выбор: не strapping pin, доступен для PWM.
+  - Избегай GPIO12 (strapping pin, должен быть LOW при загрузке).
+  - ESP32Servo использует LEDC периферию внутри — не нужно вызывать ledcWrite напрямую.
+
+Code snippet:
+  #include <ESP32Servo.h>
+
+  Servo myServo;
+
+  void setup() {
+    myServo.attach(13);
+  }
+
+  void loop() {
+    myServo.write(90);  // угол 0-180
+  }

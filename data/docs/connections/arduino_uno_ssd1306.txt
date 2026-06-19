@@ -1,0 +1,33 @@
+Board: Arduino Uno
+Component: OLED SSD1306 128x64 (I2C)
+Logic level: проверь маркировку модуля (3.3V или 5V)
+
+Wiring:
+  SSD1306 VCC -> 5V (или 3.3V, если модуль на 3.3V — см. маркировку платы)
+  SSD1306 GND -> GND
+  SSD1306 SDA -> A4
+  SSD1306 SCL -> A5
+
+Notes:
+  - I2C адрес: 0x3C (чаще всего) или 0x3D — зависит от пайки резистора на модуле.
+  - На Uno и Nano линии I2C фиксированы: SDA = A4, SCL = A5.
+  - На Mega: SDA = пин 20, SCL = пин 21.
+  - Подтягивающие резисторы (pull-up) на SDA/SCL обычно уже есть на плате SSD1306,
+    дополнительные не нужны.
+  - Требуются библиотеки: "Adafruit SSD1306" + "Adafruit GFX Library".
+  - Несколько устройств I2C можно вешать на одну пару SDA/SCL, если у них разные адреса.
+
+Code snippet:
+  #include <Wire.h>
+  #include <Adafruit_GFX.h>
+  #include <Adafruit_SSD1306.h>
+
+  Adafruit_SSD1306 display(128, 64, &Wire, -1);
+
+  void setup() {
+    if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+      while (true);  // инициализация не удалась
+    }
+    display.clearDisplay();
+    display.display();
+  }

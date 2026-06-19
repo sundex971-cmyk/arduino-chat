@@ -1,0 +1,31 @@
+Board: ESP32 (DevKit V1)
+Component: Тактовая кнопка
+Logic level: 3.3V
+
+Wiring:
+  Кнопка нога 1 -> GPIO15
+  Кнопка нога 2 -> GND
+
+  (с использованием INPUT_PULLUP резистор не нужен)
+
+Notes:
+  - ESP32 поддерживает как INPUT_PULLUP, так и INPUT_PULLDOWN (которого нет на Arduino).
+    INPUT_PULLDOWN позволяет подключить кнопку между пином и 3.3V с прямой логикой
+    (HIGH = нажато) без инверсии.
+  - GPIO15 — strapping pin (влияет на вывод логов при загрузке), но как обычный
+    digital input после загрузки работает нормально. Если есть проблемы при
+    прошивке/старте — использовать GPIO4 или GPIO16 вместо GPIO15.
+  - GPIO0, 2 — тоже strapping pins, избегать для кнопок если возможны конфликты
+    с режимом загрузки.
+  - Дребезг контактов актуален так же, как и на Arduino — нужен debounce.
+
+Code snippet:
+  const int BTN_PIN = 15;
+
+  void setup() {
+    pinMode(BTN_PIN, INPUT_PULLUP);
+  }
+
+  void loop() {
+    bool pressed = (digitalRead(BTN_PIN) == LOW);
+  }

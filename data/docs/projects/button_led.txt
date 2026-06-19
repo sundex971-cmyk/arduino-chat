@@ -1,0 +1,81 @@
+Project: Button + LED
+Difficulty: beginner
+Tags: button, digitalRead, INPUT_PULLUP, debounce, no-library
+
+Description:
+  Нажатие кнопки включает светодиод.
+  Используется INPUT_PULLUP — встроенный подтягивающий резистор Arduino,
+  внешний резистор не нужен. Логика инвертирована: LOW = нажато.
+
+Components:
+  - Arduino Uno
+  - Тактовая кнопка (1 шт.)
+  - Светодиод (1 шт.)
+  - Резистор 220 Ом (1 шт.) — для LED
+  - Breadboard
+  - Провода
+
+Connections:
+  Кнопка: одна нога -> D2, другая нога -> GND
+  (больше ничего не нужно — INPUT_PULLUP подтягивает пин к 5V внутри Arduino)
+
+  LED анод  -> резистор 220 Ом -> D13
+  LED катод -> GND
+
+Warnings:
+  - С INPUT_PULLUP логика инвертирована: LOW = кнопка нажата, HIGH = отпущена.
+    Это сбивает с толку новичков — запомни или добавь комментарий в код.
+  - Без подтяжки (INPUT без резистора) пин "плавает" и читает случайные значения.
+    Всегда используй INPUT_PULLUP или внешний резистор 10 кОм к 5V.
+  - Механические кнопки дребезжат — при одном нажатии может быть 5-10 переключений
+    за несколько миллисекунд. Для счётчика нажатий нужен debounce.
+  - Не подключай кнопку между пином и 5V при INPUT_PULLUP — получишь
+    короткое замыкание 5V на 5V (не опасно, но бессмысленно).
+
+Code:
+  // Вариант 1: простой — LED горит пока кнопка нажата
+  const int BTN_PIN = 2;
+  const int LED_PIN = 13;
+
+  void setup() {
+    pinMode(BTN_PIN, INPUT_PULLUP);
+    pinMode(LED_PIN, OUTPUT);
+  }
+
+  void loop() {
+    bool pressed = (digitalRead(BTN_PIN) == LOW);  // LOW = нажато
+    digitalWrite(LED_PIN, pressed ? HIGH : LOW);
+  }
+
+  // Вариант 2: с debounce — каждое нажатие переключает LED
+  const int BTN_PIN = 2;
+  const int LED_PIN = 13;
+  const unsigned long DEBOUNCE = 50;  // мс
+
+  bool ledState    = false;
+  bool lastBtn     = HIGH;
+  unsigned long lastChange = 0;
+
+  void setup() {
+    pinMode(BTN_PIN, INPUT_PULLUP);
+    pinMode(LED_PIN, OUTPUT);
+  }
+
+  void loop() {
+    bool btn = digitalRead(BTN_PIN);
+    unsigned long now = millis();
+
+    if (btn != lastBtn && now - lastChange > DEBOUNCE) {
+      lastChange = now;
+      lastBtn = btn;
+      if (btn == LOW) {  // нажатие (не отпускание)
+        ledState = !ledState;
+        digitalWrite(LED_PIN, ledState ? HIGH : LOW);
+      }
+    }
+  }
+
+Alternatives:
+  - Внешний резистор 10 кОм к 5V вместо INPUT_PULLUP: то же самое, но логика не инвертирована
+  - attachInterrupt(): реакция на нажатие мгновенная, не зависит от loop
+  - Энкодер вместо кнопки: вращение вместо нажатия, для регулировки значений

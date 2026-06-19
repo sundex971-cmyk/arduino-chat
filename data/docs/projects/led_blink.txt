@@ -1,0 +1,70 @@
+Project: LED Blink
+Difficulty: beginner
+Tags: led, digitalWrite, millis, no-library
+
+Description:
+  Мигающий светодиод — классический первый проект на Arduino.
+  Встроенный светодиод на пине 13 мигает каждую секунду.
+  Вариант с millis() показывает как мигать без блокировки loop.
+
+Components:
+  - Arduino Uno
+  - Светодиод (1 шт.) — опционально, на пине 13 уже есть встроенный
+  - Резистор 220 Ом (1 шт.) — только для внешнего светодиода
+  - Провода
+
+Connections:
+  Встроенный LED: ничего подключать не нужно, он на пине 13.
+
+  Внешний LED (опционально):
+  LED анод  -> резистор 220 Ом -> D13 (или любой цифровой пин)
+  LED катод -> GND
+
+Warnings:
+  - Никогда не подключать LED напрямую без резистора — сгорит пин и светодиод.
+    Расчёт: R = (5V - 2V) / 0.02A = 150 Ом → берём 220 Ом (ближайший стандарт).
+  - Пин 13 на Uno имеет встроенный резистор на плате — внешний LED можно
+    подключить напрямую к пину 13, но лучше всё равно добавить резистор.
+  - delay() блокирует весь loop — ничего другого не выполняется во время паузы.
+    Для реальных проектов используй millis().
+
+Code:
+  // Вариант 1: простой, с delay()
+  const int LED_PIN = 13;
+
+  void setup() {
+    pinMode(LED_PIN, OUTPUT);
+  }
+
+  void loop() {
+    digitalWrite(LED_PIN, HIGH);
+    delay(1000);
+    digitalWrite(LED_PIN, LOW);
+    delay(1000);
+  }
+
+  // Вариант 2: неблокирующий, с millis()
+  const int LED_PIN = 13;
+  const unsigned long INTERVAL = 1000;
+
+  bool ledState = false;
+  unsigned long lastToggle = 0;
+
+  void setup() {
+    pinMode(LED_PIN, OUTPUT);
+  }
+
+  void loop() {
+    unsigned long now = millis();
+    if (now - lastToggle >= INTERVAL) {
+      lastToggle = now;
+      ledState = !ledState;
+      digitalWrite(LED_PIN, ledState ? HIGH : LOW);
+    }
+    // здесь можно делать другие вещи пока LED мигает
+  }
+
+Alternatives:
+  - Несколько LED на разных пинах с разными интервалами — только с millis()
+  - analogWrite() на PWM пину (3,5,6,9,10,11): плавное затухание вместо мигания
+  - WS2812B (NeoPixel): один пин управляет лентой из десятков RGB светодиодов

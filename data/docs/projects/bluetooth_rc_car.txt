@@ -1,0 +1,133 @@
+Project: Bluetooth RC Car
+Difficulty: advanced
+Tags: esp32, bluetooth, l298n, motor, ledc, pwm, ble
+
+Description:
+  Радиоуправляемая машинка на ESP32 с управлением через Bluetooth Serial.
+  Телефон отправляет команды (F/B/L/R/S) через Bluetooth Terminal приложение.
+  ESP32 управляет двумя DC моторами через L298N используя LEDC (не analogWrite).
+
+Components:
+  - ESP32 DevKit V1
+  - L298N motor driver module
+  - DC мотор с редуктором (2 шт.)
+  - Колёса (2 шт.) + опорное колесо
+  - Аккумулятор Li-Ion 7.4V (2x18650) или 6xAA батарейки
+  - Провода
+  - Шасси для робота
+
+Connections:
+  --- L298N → ESP32 ---
+  L298N IN1  -> GPIO27
+  L298N IN2  -> GPIO26
+  L298N IN3  -> GPIO25
+  L298N IN4  -> GPIO33
+  L298N ENA  -> GPIO14  (LEDC PWM — скорость левого мотора)
+  L298N ENB  -> GPIO12  (LEDC PWM — скорость правого мотора)
+  L298N GND  -> GND ESP32  (ОБЯЗАТЕЛЬНО общий GND)
+
+  --- L298N → Питание ---
+  L298N VIN  -> + аккумулятора (7-12V)
+  L298N GND  -> - аккумулятора
+  L298N 5V   -> 5V ESP32 (питание платы от встроенного регулятора L298N)
+
+  --- L298N → Моторы ---
+  L298N OUT1, OUT2 -> Левый мотор
+  L298N OUT3, OUT4 -> Правый мотор
+
+  Примечание: GPIO12 на ESP32 — strapping pin. Он должен быть LOW при загрузке.
+  L298N ENA подключён через джампер — при старте он LOW (мотор выключен), проблем нет.
+  Если возникают проблемы с загрузкой — используй GPIO32 вместо GPIO12.
+
+Libraries:
+  - BluetoothSerial (встроена в ESP32 Arduino core)
+  - ESP32 Arduino core (установить через Boards Manager)
+
+Warnings:
+  - ESP32 НЕ имеет analogWrite() — использовать LEDC:
+      ledcAttach(pin, freq, resolution)
+      ledcWrite(pin, dutyCycle)
+  - GPIO25, 26 — это также DAC пины. Как PWM работают нормально.
+  - GPIO12 — strapping pin: HIGH при загрузке переводит ESP32 в режим загрузки 1.8V flash.
+    Если L298N держит этот пин HIGH при старте — плата не загрузится.
+    Джампер ENA на L298N по умолчанию не тянет пин вверх — безопасно.
+  - ADC2 пины (GPIO12, 14, 25, 26, 27) недоступны для analogRead при активном Bluetooth.
+    В этом проекте analogRead не используется — конфликта нет.
+  - Bluetooth Classic (BluetoothSerial) работает ТОЛЬКО на оригинальном ESP32.
+    На ESP32-S3, C3, S2 — только BLE. Проверь маркировку своего модуля.
+  - ОБЯЗАТЕЛЬНО общий GND между ESP32 и L298N.
+  - НЕ питать моторы от 3.3V/5V пинов ESP32 — сгорит плата.
+  - L298N теряет ~2V на транзисторах. При питании 7.4V моторы получат ~5.4V.
+
+Code:
+  #include "BluetoothSerial.h"
+
+  BluetoothSerial SerialBT;
+
+  // Пины направления
+  const int IN1 = 27, IN2 = 26;  // Левый мотор
+  const int IN3 = 25, IN4 = 33;  // Правый мотор
+
+  // Пины PWM (LEDC)
+  const int ENA = 14;  // Левый
+  const int ENB = 12;  // Правый
+
+  const int PWM_FREQ  = 1000;  // Гц
+  const int PWM_RES   = 8;     // 8 бит (0-255)
+  const int SPEED     = 200;   // 0-255
+
+  void motorLeft(int speed, bool fwd) {
+    digitalWrite(IN1, fwd ? HIGH : LOW);
+    digitalWrite(IN2, fwd ? LOW  : HIGH);
+    ledcWrite(ENA, speed);
+  }
+
+  void motorRight(int speed, bool fwd) {
+    digitalWrite(IN3, fwd ? HIGH : LOW);
+    digitalWrite(IN4, fwd ? LOW  : HIGH);
+    ledcWrite(ENB, speed);
+  }
+
+  void stop() {
+    ledcWrite(ENA, 0);
+    ledcWrite(ENB, 0);
+  }
+
+  void setup() {
+    Serial.begin(115200);
+
+    pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
+    pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
+
+    // LEDC вместо analogWrite
+    ledcAttach(ENA, PWM_FREQ, PWM_RES);
+    ledcAttach(ENB, PWM_FREQ, PWM_RES);
+
+    SerialBT.begin("ESP32_RC_Car");
+    Serial.println("Bluetooth ready. Waiting for connection...");
+  }
+
+  void loop() {
+    if (!SerialBT.available()) return;
+
+    char cmd = SerialBT.read();
+    Serial.println("CMD: " + String(cmd));
+
+    switch (cmd) {
+      case 'F': motorLeft(SPEED, true);  motorRight(SPEED, true);  break;
+      case 'B': motorLeft(SPEED, false); motorRight(SPEED, false); break;
+      case 'L': motorLeft(0, true);      motorRight(SPEED, true);  break;
+      case 'R': motorLeft(SPEED, true);  motorRight(0, true);      break;
+      case 'S': stop(); break;
+    }
+  }
+
+  // Приложение для телефона: "Serial Bluetooth Terminal" (Android)
+  // Команды: F=вперёд, B=назад, L=влево, R=вправо, S=стоп
+
+Alternatives:
+  - HC-05 + Arduino Uno: Bluetooth Classic без ESP32, но нет WiFi
+  - ESP32 BLE + кастомное приложение: меньше энергопотребление
+  - nRF24L01: радио 2.4 GHz, дальше и быстрее Bluetooth
+  - TB6612FNG вместо L298N: эффективнее, меньше нагрев, компактнее
+  - Добавить HC-SR04 спереди: автоматическое торможение перед препятствием

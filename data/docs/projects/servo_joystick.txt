@@ -1,0 +1,113 @@
+Project: Servo Joystick Control
+Difficulty: beginner
+Tags: servo, joystick, analogRead, map, constrain
+
+Description:
+  Джойстик управляет двумя сервоприводами: ось X → горизонтальный серво,
+  ось Y → вертикальный серво. Основа для поворотной камеры или робо-руки.
+
+Components:
+  - Arduino Uno
+  - Servo SG90 (2 шт.)
+  - Аналоговый джойстик модуль (KY-023 или аналог)
+  - Внешний источник питания 5V 1A (для серво)
+  - Резистор 470 Ом (2 шт.) — на сигнальных линиях серво
+  - Провода
+  - Breadboard
+
+Connections:
+  --- Джойстик ---
+  JOY VCC  -> 5V Arduino
+  JOY GND  -> GND
+  JOY VRX  -> A0  (ось X, 0-1023)
+  JOY VRY  -> A1  (ось Y, 0-1023)
+  JOY SW   -> D4  (кнопка, INPUT_PULLUP) — опционально
+
+  --- Серво (ВАЖНО: питать от внешнего источника) ---
+  Серво X сигнал -> резистор 470 Ом -> D9
+  Серво Y сигнал -> резистор 470 Ом -> D10
+  Серво X VCC    -> внешний 5V
+  Серво Y VCC    -> внешний 5V
+  Серво X GND    -> GND (общий с Arduino)
+  Серво Y GND    -> GND (общий с Arduino)
+
+Libraries:
+  - Servo (встроена в Arduino IDE, устанавливать не нужно)
+
+Warnings:
+  - НЕ питать оба серво от пина 5V Arduino — при нагрузке просадка напряжения
+    вызывает сбросы платы. Использовать внешний источник 5V минимум 1A.
+  - Общий GND между Arduino и внешним источником питания ОБЯЗАТЕЛЕН.
+    Без него серво не получают корректный сигнал.
+  - Резистор 470 Ом на сигнальной линии серво защищает пин от выбросов тока.
+  - Servo библиотека на Uno отключает analogWrite() на пинах 9 и 10.
+    Если нужен PWM на этих пинах — использовать пины 3, 5, 6, 11 для серво.
+  - Джойстик в центре даёт не ровно 512, а ~490-530 из-за механического разброса.
+    Добавь мёртвую зону (deadzone) чтобы серво не дрожал в центре.
+  - constrain() после map() обязателен — без него значения выходят за 0-180.
+
+Code:
+  #include <Servo.h>
+
+  Servo servoX;
+  Servo servoY;
+
+  const int JOY_X   = A0;
+  const int JOY_Y   = A1;
+  const int JOY_BTN = 4;
+  const int DEADZONE = 30;  // мёртвая зона вокруг центра (512)
+
+  int centerX = 512;
+  int centerY = 512;
+
+  int applyDeadzone(int val, int center) {
+    if (abs(val - center) < DEADZONE) return center;
+    return val;
+  }
+
+  void setup() {
+    servoX.attach(9);
+    servoY.attach(10);
+    pinMode(JOY_BTN, INPUT_PULLUP);
+    Serial.begin(9600);
+
+    // Калибровка центра при старте
+    centerX = analogRead(JOY_X);
+    centerY = analogRead(JOY_Y);
+
+    // Начальное положение — центр
+    servoX.write(90);
+    servoY.write(90);
+  }
+
+  void loop() {
+    int rawX = applyDeadzone(analogRead(JOY_X), centerX);
+    int rawY = applyDeadzone(analogRead(JOY_Y), centerY);
+
+    int angleX = map(rawX, 0, 1023, 0, 180);
+    int angleY = map(rawY, 0, 1023, 180, 0);  // инверсия Y
+
+    angleX = constrain(angleX, 0, 180);
+    angleY = constrain(angleY, 0, 180);
+
+    servoX.write(angleX);
+    servoY.write(angleY);
+
+    // Кнопка — сброс в центр
+    if (digitalRead(JOY_BTN) == LOW) {
+      servoX.write(90);
+      servoY.write(90);
+    }
+
+    Serial.print("X:"); Serial.print(angleX);
+    Serial.print(" Y:"); Serial.println(angleY);
+
+    delay(20);  // ~50 Гц обновления
+  }
+
+Alternatives:
+  - Потенциометры вместо джойстика: два отдельных регулятора, проще в монтаже
+  - Акселерометр MPU6050 вместо джойстика: управление наклоном телефона/руки
+  - Серво MG996R вместо SG90: больший крутящий момент для тяжёлых конструкций
+  - Добавить третий серво на кнопку джойстика: управление захватом роборуки
+  - ESP32 + WiFi: управление серво через веб-интерфейс со смартфона

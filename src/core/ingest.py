@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from .chunking import split_text
     from .config import (
         COLLECTION_EMBEDDING_MODEL_KEY,
         COLLECTION_NAME,
@@ -13,8 +12,8 @@ try:
         PROJECT_ROOT,
         VECTOR_DB_DIR,
     )
+    from ..tools.chunking import split_text
 except ImportError:
-    from chunking import split_text
     from config import (
         COLLECTION_EMBEDDING_MODEL_KEY,
         COLLECTION_NAME,
@@ -23,6 +22,7 @@ except ImportError:
         PROJECT_ROOT,
         VECTOR_DB_DIR,
     )
+    from tools.chunking import split_text
 
 CHUNK_SIZE = 800
 CHUNK_OVERLAP = 150
@@ -80,6 +80,52 @@ def create_collection() -> Any:
     return collection
 
 
+def create_metadata(file_path: Path) -> dict[str, Any]:
+    """
+    Creates metadata based on document location.
+
+    Folder structure (flat, one file per board+component or topic):
+
+    data/docs/
+        arduino/...                       -> category: arduino
+        esp32/...                         -> category: esp32
+        components/...                    -> category: components
+        connections/arduino_uno_hc-sr04.txt
+                                           -> category: connections
+                                              board: arduino_uno
+                                              component: hc-sr04
+        projects/...                      -> category: projects
+        rules/...                         -> category: rules
+    """
+    relative_path = file_path.relative_to(DATA_DIR)
+    parts = relative_path.parts
+
+    # First folder under data/docs/ is always the category
+    category = parts[0] if len(parts) > 1 else "uncategorized"
+
+    metadata: dict[str, Any] = {
+        "source": str(relative_path),
+        "filename": file_path.name,
+        "category": category,
+    }
+
+    if category == "connections":
+        # Filenames look like: arduino_uno_hc-sr04.txt, esp32_dht22.txt
+        stem = file_path.stem  # filename without .txt
+
+        known_boards = ["arduino_uno", "arduino_nano", "arduino_mega", "esp32"]
+        board = next((b for b in known_boards if stem.startswith(b)), None)
+
+        if board:
+            metadata["board"] = board
+            metadata["component"] = stem[len(board) + 1:]  # +1 strips the underscore
+        else:
+            metadata["board"] = "unknown"
+            metadata["component"] = stem
+
+    return metadata
+
+
 def process_file(file_path: Path, collection: Any, embeddings: Any) -> int:
     print(f"[INFO] Processing {file_path.name}")
 
@@ -94,14 +140,12 @@ def process_file(file_path: Path, collection: Any, embeddings: Any) -> int:
         print(f"[WARN] Skipping empty file: {file_path.name}")
         return 0
 
+    base_metadata = create_metadata(file_path)
+
     ids = [f"{file_path.stem}:{i}" for i in range(len(chunks))]
     vectors = embeddings.embed_documents(chunks)
     metadatas = [
-        {
-            "source": file_path.name,
-            "path": str(file_path.relative_to(PROJECT_ROOT)),
-            "chunk_index": i,
-        }
+        {**base_metadata, "chunk_index": i}
         for i in range(len(chunks))
     ]
 
@@ -111,6 +155,8 @@ def process_file(file_path: Path, collection: Any, embeddings: Any) -> int:
         documents=chunks,
         metadatas=metadatas,
     )
+
+    print(f"[OK] {file_path.name} ({len(chunks)} chunks)")
     return len(chunks)
 
 
@@ -118,9 +164,9 @@ def main() -> None:
     if not DATA_DIR.exists():
         raise SystemExit(f"Data directory does not exist: {DATA_DIR}")
 
-    files = sorted(DATA_DIR.glob("*.txt"))
+    files = sorted(set(DATA_DIR.rglob("*.txt")) | set(DATA_DIR.rglob("*.md")))
     if not files:
-        raise SystemExit(f"No .txt files found in {DATA_DIR}")
+        raise SystemExit(f"No documents found in {DATA_DIR}")
 
     embeddings = create_embeddings()
     collection = create_collection()

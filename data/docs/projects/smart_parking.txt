@@ -1,0 +1,129 @@
+# Smart Parking System
+
+
+Category:
+STEAM Project / Automation
+
+
+Difficulty:
+Beginner
+
+
+## Project description
+
+Smart Parking System detects whether a parking place is occupied.
+
+The system uses an ultrasonic sensor to detect a car and shows the parking status using LEDs.
+
+
+## Main components
+
+
+Microcontroller:
+
+Arduino Uno
+
+
+Sensor:
+
+HC-SR04 ultrasonic sensor
+
+
+Output:
+
+Red LED
+
+Green LED
+
+
+Optional:
+
+OLED display
+
+
+
+## How it works
+
+
+1. HC-SR04 measures distance.
+
+
+2. Arduino analyzes the value.
+
+
+3. If a car is detected:
+
+Red LED turns on.
+
+
+4. If parking place is empty:
+
+Green LED turns on.
+
+
+
+## Connections
+
+
+HC-SR04:
+
+
+VCC → 5V
+
+GND → GND
+
+TRIG → D6
+
+ECHO → D7
+
+
+
+Green LED:
+
+D9
+
+
+Red LED:
+
+D10
+
+
+
+## Program logic
+
+
+Measure distance
+
+
+↓
+
+If distance < threshold:
+
+
+Parking occupied
+
+
+↓
+
+Turn red LED ON
+
+
+
+Else:
+
+
+Parking free
+
+
+↓
+
+Turn green LED ON
+
+
+
+## Possible improvements
+
+
+- Add OLED display
+- Add multiple parking spaces
+- Add ESP32 WiFi monitoring

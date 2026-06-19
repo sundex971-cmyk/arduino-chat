@@ -1,0 +1,36 @@
+Board: ESP32 (DevKit V1)
+Component: DHT22 (temperature & humidity sensor)
+Logic level: 3.3V совместимо напрямую
+
+Wiring:
+  DHT22 VCC  -> 3.3V
+  DHT22 GND  -> GND
+  DHT22 DATA -> GPIO4
+  DHT22 DATA -> резистор 10 кОм -> 3.3V  (pull-up, если без модуля-платы)
+
+Notes:
+  - DHT22 работает от 3.3V-5.5V — на ESP32 можно питать от 3.3V напрямую,
+    делитель напряжения НЕ нужен (в отличие от HC-SR04).
+  - DATA — стандартный digital пин, GPIO4 не strapping и не ADC2 — безопасный выбор.
+  - Минимальный интервал между чтениями: 2 секунды, как и на Arduino.
+  - Требуется та же библиотека "DHT sensor library" by Adafruit.
+  - При питании от 3.3V диапазон измерений и точность не меняются.
+
+Code snippet:
+  #include <DHT.h>
+
+  #define DHT_PIN  4
+  #define DHT_TYPE DHT22
+
+  DHT dht(DHT_PIN, DHT_TYPE);
+
+  void setup() {
+    dht.begin();
+  }
+
+  void loop() {
+    delay(2000);
+    float t = dht.readTemperature();
+    float h = dht.readHumidity();
+    if (isnan(t) || isnan(h)) return;
+  }

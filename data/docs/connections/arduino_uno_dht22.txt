@@ -1,0 +1,36 @@
+Board: Arduino Uno
+Component: DHT22 (temperature & humidity sensor)
+Logic level: 5V
+
+Wiring:
+  DHT22 VCC  -> 5V
+  DHT22 GND  -> GND
+  DHT22 DATA -> D2
+  DHT22 DATA -> резистор 10 кОм -> 5V  (pull-up, если датчик без модуля-платы)
+
+Notes:
+  - 3-контактные модули DHT22 (на маленькой плате) обычно уже имеют pull-up —
+    дополнительный резистор не нужен.
+  - 4-контактный голый DHT22 (пин 3 не используется) требует внешний pull-up 10 кОм.
+  - Минимальный интервал между чтениями: 2 секунды.
+  - DATA можно подключать к любому digital пину, кроме 0 и 1.
+  - Требуется библиотека "DHT sensor library" by Adafruit + "Adafruit Unified Sensor".
+
+Code snippet:
+  #include <DHT.h>
+
+  #define DHT_PIN  2
+  #define DHT_TYPE DHT22
+
+  DHT dht(DHT_PIN, DHT_TYPE);
+
+  void setup() {
+    dht.begin();
+  }
+
+  void loop() {
+    delay(2000);
+    float t = dht.readTemperature();
+    float h = dht.readHumidity();
+    if (isnan(t) || isnan(h)) return;
+  }
