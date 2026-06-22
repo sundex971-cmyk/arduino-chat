@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-Arduino Chat - Interactive RAG-based AI assistant for Arduino documentation.
-Uses ChromaDB for vector search and Ollama/LangChain for LLM capabilities.
-"""
 
 from __future__ import annotations
 
@@ -15,6 +11,7 @@ try:
     from .config import (
         COLLECTION_EMBEDDING_MODEL_KEY,
         COLLECTION_NAME,
+        DATA_DIR,
         EMBEDDING_MODEL,
         LLM_MODEL,
         OLLAMA_BASE_URL,
@@ -25,6 +22,7 @@ except ImportError:
     from config import (
         COLLECTION_EMBEDDING_MODEL_KEY,
         COLLECTION_NAME,
+        DATA_DIR,
         EMBEDDING_MODEL,
         LLM_MODEL,
         OLLAMA_BASE_URL,
@@ -38,6 +36,18 @@ DEFAULT_TIMEOUT = 30
 DEBUG = os.getenv("ARDUINO_CHAT_DEBUG", "").lower() in {"1", "true", "yes", "on"}
 MIN_CONTEXT_CHARS = 120
 MAX_HISTORY_PAIRS = 5  # сколько последних пар (вопрос+ответ) хранить в памяти
+
+
+def read_positive_int_env(name: str, default: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+OUTPUT_TOKEN_LIMIT = read_positive_int_env("ARDUINO_CHAT_OUTPUT_TOKEN_LIMIT", 1500)
+HISTORY_TOKEN_LIMIT = read_positive_int_env("ARDUINO_CHAT_HISTORY_TOKEN_LIMIT", 3000)
 
 # ------------------------------------------------------------------ #
 # Language detection                                                   #
@@ -64,9 +74,54 @@ def detect_language(text: str) -> str:
 
 
 _LANGUAGE_INSTRUCTION = {
-    "ru": "Отвечай на русском языке.",
-    "ro": "Răspunde în limba română.",
-    "en": "Answer in English.",
+    "ru": "Отвечай только на русском языке. Не используй английский или румынский в заголовках и пояснениях.",
+    "ro": "Răspunde numai în limba română. Nu folosi engleza sau rusa în titluri și explicații.",
+    "en": "Answer only in English. Do not use Russian or Romanian in headings or explanations.",
+}
+
+_PROJECT_SECTION_TITLES = {
+    "ru": [
+        "Название проекта",
+        "Как работает",
+        "Компоненты",
+        "Подключение",
+        "Альтернативы",
+        "Предупреждения",
+    ],
+    "ro": [
+        "Numele proiectului",
+        "Cum funcționează",
+        "Componente",
+        "Conexiuni",
+        "Alternative",
+        "Avertismente",
+    ],
+    "en": [
+        "Project name",
+        "How it works",
+        "Components",
+        "Connections",
+        "Alternatives",
+        "Warnings",
+    ],
+}
+
+_PIN_UNKNOWN_TEXT = {
+    "ru": "Подключение пинов не определено в документации.",
+    "ro": "Conexiunea pinilor nu este definită în documentație.",
+    "en": "Pin connection is not defined in the documentation.",
+}
+
+_GENERAL_FORMAT_TITLES = {
+    "ru": ["Краткое определение", "Важные моменты", "Простой пример"],
+    "ro": ["Definiție scurtă", "Puncte importante", "Exemplu simplu"],
+    "en": ["Short definition", "Important points", "Simple example"],
+}
+
+_COMPONENT_GROUP_LABELS = {
+    "ru": ["обязательные компоненты", "опциональные улучшения"],
+    "ro": ["componente obligatorii", "îmbunătățiri opționale"],
+    "en": ["required components", "optional improvements"],
 }
 
 # ------------------------------------------------------------------ #
@@ -98,26 +153,58 @@ def detect_query_mode(query: str) -> str:
 
 _SHARED_RULES = """## Core rules:
 - Be factually correct and avoid guessing.
-- Use the provided documentation context as the primary source of truth.
-- If context is incomplete, you may use general Arduino/ESP32 knowledge.
-- Never invent technical details or incorrect electrical explanations.
-- Never leave the answer empty.
+- The provided documentation context is the primary and preferred source of truth.
+- Use general Arduino/ESP32 knowledge ONLY when it does not contradict the documentation.
+- If information is missing, clearly say: "This is not defined in the provided documentation."
+- Never invent components, modules, libraries, pin connections, voltage values, or hardware specifications.
+- Never create professional or industrial solutions unless explicitly requested.
+- Prefer simple educational solutions suitable for children.
+
+## RAG rules:
+- Always prioritize retrieved documentation over your own knowledge.
+- Do not combine unrelated components from different documents unless the user asks for alternatives.
+- Do not assume that a component exists in the project if it is not mentioned in context.
+- If no matching documentation is found, explain this instead of designing a complete system from imagination.
 
 ## Safety rules:
-- Do not hallucinate functions, modes, or hardware behavior.
-- If unsure, say: "This is not clearly defined in the provided documentation."
-- Never suggest a connection listed as forbidden in the documentation context
-  (e.g. signal pin to VCC, VCC to GND, 5V directly to an ESP32 GPIO).
-- Always flag voltage-level mismatches between board and component
-  (e.g. ESP32 is 3.3V logic, most Arduino boards are 5V logic).
+- Never hallucinate hardware behavior.
+- Never invent forbidden connections.
+- Always check voltage compatibility:
+  - Arduino Uno/Nano: usually 5V logic.
+  - ESP32: 3.3V logic.
+- Mention voltage protection only when it is actually relevant.
+- Do not add unnecessary drivers, converters, or protection circuits.
 
-CRITICAL RULES:
-- Never use analogWrite unless explicitly mentioned in context.
-- For LED blinking tasks, use ONLY digitalWrite + delay or millis.
-- ESP32 has no analogWrite — use ledcAttach/ledcWrite (LEDC) instead, and say so
-  explicitly if the board is ESP32.
-- If unsure, say "not in documentation".
-- Do not infer hardware behavior.
+## Beginner electronics rules:
+- Prefer Arduino Uno + basic components for beginner projects.
+- Prefer the simplest working design.
+- Avoid adding WiFi, cameras, RFID, cloud systems, or advanced modules unless:
+  1. they exist in documentation, or
+  2. the user explicitly requests them.
+
+## Response length:
+- Keep answers concise.
+- Do not repeat information.
+- Avoid long theoretical explanations.
+- For project descriptions: maximum ~1000 words.
+
+## Documentation priority:
+- When a retrieved document describes a project, follow that project exactly.
+- Do not improve, redesign, or expand the project.
+- Do not replace documented components with alternatives.
+- Do not add optional features unless explicitly requested.
+- Do not repeat the same information.
+- Do not copy the same sentence twice.
+
+## Hardware accuracy:
+- Never invent pin numbers.
+- Never invent voltage values.
+- Never invent electrical requirements.
+- Never invent detection thresholds, distance ranges, timing, buttons, or timers.
+- If a value is not in documentation, say it is unknown.
+- Preserve exact component names from documentation.
+- Do not replace specific components with generic categories.
+- Never shorten HC-SR04 to HC-SR4.
 
 ## Language:
 - If the question is written in Russian (Cyrillic), answer in Russian.
@@ -125,98 +212,169 @@ CRITICAL RULES:
 - Otherwise, answer in English.
 """
 
-PROJECT_SYSTEM_PROMPT = f"""You are an expert Arduino and ESP32 hardware assistant.
 
-The user is asking you to design or describe a hardware project (a device, a circuit,
-something to build). You MUST answer using EXACTLY the following 6-section format,
-in this order, with these exact section titles translated into the answer's language
-but keeping the numbering 1-6.
+def build_project_system_prompt(language: str) -> str:
+    titles = _PROJECT_SECTION_TITLES[language]
+    unknown_pin_text = _PIN_UNKNOWN_TEXT[language]
+    component_group_labels = _COMPONENT_GROUP_LABELS[language]
+
+    return f"""You are an Arduino and ESP32 STEAM tutor for children.
+
+The user is asking you to design or describe a hardware project.
+Answer in the user's language only.
+
+You MUST answer using EXACTLY the following 6-section format and section titles.
 
 {_SHARED_RULES}
 
-## Required response format (always follow, do not skip or reorder sections):
+## Required response format:
 
-1. Название проекта / Project name / Numele proiectului
-   - One short, descriptive title for the project.
+1. {titles[0]}
+   - Give a short educational project name.
+   - Do not describe an industrial system.
 
-2. Как работает / How it works / Cum funcționează
-   - 2-4 sentences explaining the operating principle in simple language.
+2. {titles[1]}
+   - Explain the working principle in simple language.
+   - Describe only the components actually used.
+   - Maximum 4-5 sentences.
 
-3. Компоненты / Components / Componente
-   - Bullet list of every physical part needed (board, sensors, resistors, etc).
-   - Include resistor/capacitor values where relevant.
+3. {titles[2]}
+   - List only required physical components.
+   - Separate:
+     - {component_group_labels[0]}
+     - {component_group_labels[1]}
+   - Do not add advanced components without request.
 
-4. Подключение / Connections / Conexiuni
-   - Pin-by-pin wiring list, formatted as "Component pin -> Board pin".
-   - Mention the board's logic voltage (5V or 3.3V) and any required
-     level-shifting or voltage divider if the documentation context covers it.
+4. {titles[3]}
+   - If verified wiring is available, write only: VERIFIED_CONNECTIONS
+   - Otherwise say: "{unknown_pin_text}"
+   - Do not explain wiring in your own words.
 
-5. Альтернативы / Alternatives / Alternative
-   - 2-4 bullet points: alternative components or approaches, with a short
-     trade-off note for each (cheaper/more accurate/simpler/etc).
+5. {titles[4]}
+   - Give alternatives only if useful.
+   - Maximum 2 alternatives.
+   - Explain the trade-off briefly.
+   - Do not add unnecessary complexity.
 
-6. Предупреждения / Warnings / Avertismente
-   - Bullet list of concrete risks: wrong polarity, missing resistor,
-     voltage mismatch, current limits, common beginner mistakes.
-   - Cross-check against any "forbidden connections" rules present in context
-     and call them out explicitly if relevant.
+6. {titles[5]}
+   - Mention only real beginner mistakes:
+     - wrong polarity
+     - missing resistor
+     - voltage mismatch
+     - power problems
+   - Do not invent risks.
 
-Do not add extra sections. Do not merge sections. If information for a section
-is missing from context, use general knowledge but mark uncertain details with
-"⚠️ not confirmed in documentation".
+## Extra project rules:
+- Prefer beginner STEAM projects:
+  Arduino + sensors + simple outputs.
+- Do not transform a simple school project into an industrial automation system.
+- Do not add cameras, AI, servers, RFID, or cloud features unless requested.
 
-For beginner STEAM projects:
-- Prefer the simplest solution.
-- Use only components from retrieved documentation.
-- Do not add advanced alternatives unless requested.
-- Always include exact wiring from project documentation.
 """
 
-GENERAL_SYSTEM_PROMPT = f"""You are an expert Arduino and ESP32 programming assistant.
 
-The user is asking a regular question (a definition, an explanation, debugging help,
-or a "how does X work" question) — NOT a request to design a full project.
-Do NOT use the 6-section project format for these questions.
+def build_general_system_prompt(language: str) -> str:
+    titles = _GENERAL_FORMAT_TITLES[language]
+
+    return f"""You are an Arduino and ESP32 programming assistant for children.
+
+The user asks a general question:
+definition, explanation, debugging, or programming help.
+
+Do NOT use the project format.
+Answer in the user's language only.
 
 {_SHARED_RULES}
 
 ## Output style:
-- Be concise and structured.
-- Use simple language.
-- Prefer bullet points when explaining concepts.
-- Avoid repeating the same idea in different words.
+- Be concise.
+- Use simple explanations.
+- Prefer examples.
+- Avoid unnecessary complexity.
 
-## Response format (always follow):
-1. Short definition (1-2 sentences)
-2. Key points or modes (bullet list if applicable)
-3. Short practical explanation or example (if relevant)
+## Response format:
+
+1. {titles[0]}
+2. {titles[1]}
+3. {titles[2]} (if useful)
 
 ## Goal:
-Help the user understand Arduino/ESP32 quickly and accurately without confusion
-or unnecessary complexity.
+Help beginners understand Arduino and ESP32 accurately.
+Do not overwhelm the user with advanced information.
 """
 
 
 def select_system_prompt(query: str) -> tuple[str, str]:
     """Return (system_prompt, mode) for the given user query."""
     mode = detect_query_mode(query)
-    prompt = PROJECT_SYSTEM_PROMPT if mode == "project" else GENERAL_SYSTEM_PROMPT
+    language = detect_language(query)
+    prompt = (
+        build_project_system_prompt(language)
+        if mode == "project"
+        else build_general_system_prompt(language)
+    )
     return prompt, mode
+
+
+def approx_tokens(text: str) -> int:
+    """Conservative token estimate for trimming local prompts/responses."""
+    if not text:
+        return 0
+
+    words = len(re.findall(r"\S+", text))
+    non_space_chars = len(re.sub(r"\s+", "", text))
+    char_divisor = 3 if _CYRILLIC.search(text) else 4
+
+    return max(1, int(words / 0.75), (non_space_chars + char_divisor - 1) // char_divisor)
+
+
+def trim_history_by_tokens(
+    history: list[tuple[str, str]],
+    max_tokens: int = HISTORY_TOKEN_LIMIT,
+) -> list[tuple[str, str]]:
+    """Keep most recent exchanges while total estimated tokens <= max_tokens."""
+    total = 0
+    kept = []
+    # идём с конца, чтобы сохранить последние сообщения
+    for role, text in reversed(history):
+        t = approx_tokens(text)
+        if total + t > max_tokens:
+            break
+        kept.append((role, text))
+        total += t
+    return list(reversed(kept))
 
 
 def trim_history(
     history: list[tuple[str, str]],
     max_pairs: int = MAX_HISTORY_PAIRS,
+    max_tokens: int = HISTORY_TOKEN_LIMIT,
 ) -> list[tuple[str, str]]:
-    """Keep only the last `max_pairs` (user, assistant) exchanges.
+    """Keep recent conversation turns within both pair and token limits."""
+    max_messages = max_pairs * 2
+    recent = history[-max_messages:] if max_messages > 0 else []
+    return trim_history_by_tokens(recent, max_tokens=max_tokens)
 
-    `history` is a flat list like [("user", "..."), ("assistant", "..."), ...].
-    Each pair is 2 entries, so we keep the last max_pairs * 2 entries.
-    """
-    max_entries = max_pairs * 2
-    if len(history) <= max_entries:
-        return history
-    return history[-max_entries:]
+
+def limit_text_by_tokens(text: str, max_tokens: int = OUTPUT_TOKEN_LIMIT) -> str:
+    """Hard fallback when the model ignores the requested output length."""
+    if approx_tokens(text) <= max_tokens:
+        return text
+
+    pieces = re.split(r"(\s+)", text.strip())
+    kept: list[str] = []
+
+    for piece in pieces:
+        candidate = "".join(kept) + piece
+        if approx_tokens(candidate) > max_tokens:
+            break
+        kept.append(piece)
+
+    trimmed = "".join(kept).rstrip()
+    if trimmed:
+        return trimmed
+
+    return text[: max(1, max_tokens * 3)].rstrip()
 
 
 def check_dependencies() -> bool:
@@ -283,11 +441,13 @@ def load_llm() -> Any:
     return ChatOllama(
         model=LLM_MODEL,
         base_url=OLLAMA_BASE_URL,
-        temperature=0.3,
+        temperature=0.2,
         top_p=0.9,
-        num_predict=-1,
-        extra_body={"think": False},
-        num_ctx=16384,
+        num_predict=OUTPUT_TOKEN_LIMIT, # native Ollama output-token cap
+        reasoning=False,
+        num_ctx=4096,                   # уменьшенный контекст для 2B модели
+        repeat_penalty=1.2,
+        stop=["<END>", "<STOP>"],       # явные стоп-токены
     )
 
 
@@ -445,6 +605,119 @@ def context_is_useful(context: str) -> bool:
     return bool(context and len(context.strip()) >= MIN_CONTEXT_CHARS)
 
 
+def normalize_arrow(text: str) -> str:
+    return text.replace("→", "->").strip()
+
+
+def extract_connections_from_text(text: str) -> list[str]:
+    """Extract wiring lines from a Markdown-like Connections section."""
+    match = re.search(
+        r"(?ims)^##\s*(?:Connections|Hardware connection)\s*$"
+        r"(?P<body>.*?)(?=^##\s+|\Z)",
+        text,
+    )
+    if not match:
+        return []
+
+    lines: list[str] = []
+    component = ""
+
+    for raw_line in match.group("body").splitlines():
+        line = raw_line.strip().strip("-")
+        if not line:
+            continue
+        if line.startswith("###"):
+            continue
+        if line.endswith(":"):
+            component = line[:-1].strip()
+            continue
+
+        line = normalize_arrow(line)
+        if "->" in line:
+            lines.append(f"{component} {line}".strip() if component else line)
+        elif component and re.fullmatch(r"(?:D|A|GPIO)?\d+|GND|5V|3\.3V", line, re.I):
+            lines.append(f"{component} signal/control pin -> {line}")
+
+    return lines
+
+
+def extract_main_components_from_text(text: str) -> list[str]:
+    """Extract component names from a Markdown-like Main components section."""
+    match = re.search(
+        r"(?ims)^##\s*Main components\s*$"
+        r"(?P<body>.*?)(?=^##\s+|\Z)",
+        text,
+    )
+    if not match:
+        return []
+
+    components: list[str] = []
+    label = ""
+
+    for raw_line in match.group("body").splitlines():
+        line = raw_line.strip().strip("-")
+        if not line:
+            continue
+        if line.endswith(":"):
+            label = line[:-1].strip()
+            continue
+        if label.lower() == "optional":
+            continue
+        components.append(f"{label}: {line}" if label else line)
+
+    return components
+
+
+def read_first_project_source(metadatas: list[dict]) -> str:
+    for metadata in metadatas:
+        if metadata.get("category") != "projects":
+            continue
+
+        source = metadata.get("source")
+        if not source:
+            continue
+
+        source_path = (DATA_DIR / source).resolve()
+        try:
+            source_path.relative_to(DATA_DIR.resolve())
+            return source_path.read_text(encoding="utf-8")
+        except (OSError, ValueError):
+            continue
+
+    return ""
+
+
+def verified_connections_from_sources(metadatas: list[dict]) -> list[str]:
+    """Read exact wiring from retrieved project documents when available."""
+    text = read_first_project_source(metadatas)
+    return extract_connections_from_text(text) if text else []
+
+
+def verified_components_from_sources(metadatas: list[dict]) -> list[str]:
+    """Read exact component list from retrieved project documents when available."""
+    text = read_first_project_source(metadatas)
+    return extract_main_components_from_text(text) if text else []
+
+
+def replace_connections_section(response: str, connections: list[str]) -> str:
+    """Replace the model-written project wiring with verified document wiring."""
+    if not connections:
+        return response
+
+    replacement_body = "\n".join(f"- {line}" for line in connections)
+    if "VERIFIED_CONNECTIONS" in response:
+        return response.replace("VERIFIED_CONNECTIONS", replacement_body)
+
+    pattern = re.compile(
+        r"(?s)((?:##\s*)?(?:4\.\s*)?(?:Подключение|Connections|Conexiuni)[^\n]*\n)"
+        r".*?"
+        r"(?=\n(?:##\s*)?(?:5\.\s*)?(?:Альтернативы|Alternatives|Alternative)\b)",
+    )
+
+    updated, count = pattern.subn(r"\1" + replacement_body + "\n", response, count=1)
+    return updated if count else response
+
+
 def normalize_llm_response(response: Any) -> str:
     if response is None:
         return ""
@@ -490,7 +763,10 @@ def safe_llm_call(llm, messages, retries: int = 3) -> str:
                 else ""
             )
             if done_reason == "length":
-                print("[WARN] LLM hit token limit — try increasing num_predict")
+                print(
+                    f"[WARN] LLM output reached the {OUTPUT_TOKEN_LIMIT}-token limit; "
+                    "the answer may be truncated."
+                )
 
             text = normalize_llm_response(response)
             text = text.strip() if text else ""
@@ -509,6 +785,8 @@ def generate_answer(
     question: str,
     context: str,
     history: list[tuple[str, str]] | None = None,
+    verified_connections: list[str] | None = None,
+    verified_components: list[str] | None = None,
 ) -> str:
     try:
         from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -521,8 +799,7 @@ def generate_answer(
         "No relevant Arduino documentation was retrieved."
     )
 
-    MAX_CONTEXT_CHARS = 3500  # было 800 — резало документ до того, как доходило
-                               # до Connections/Warnings (часто в конце файла)
+    MAX_CONTEXT_CHARS = 3500
     if len(context_block) > MAX_CONTEXT_CHARS:
         cut = context_block[:MAX_CONTEXT_CHARS]
         # обрезаем по последнему переносу строки, а не посреди слова/числа
@@ -550,7 +827,23 @@ def generate_answer(
 User Question: {question}
 
 {grounding_instruction}
-{language_instruction}"""
+{language_instruction}
+Keep the final answer within {OUTPUT_TOKEN_LIMIT} tokens."""
+
+    if verified_connections:
+        user_prompt += """
+
+Verified wiring is available.
+In section 4, write exactly one line: VERIFIED_CONNECTIONS"""
+
+    if verified_components:
+        component_lines = "\n".join(f"- {line}" for line in verified_components)
+        user_prompt += f"""
+
+Verified required components from documentation:
+{component_lines}
+
+Use these exact components in section 3. Do not omit any of them."""
 
     # Собираем сообщения: системный промпт -> история диалога -> текущий вопрос
     messages: list[Any] = [SystemMessage(content=system_prompt)]
@@ -572,7 +865,11 @@ User Question: {question}
         if not response:
             return "[No response generated]"
 
-        return response.strip()
+        response = response.strip()
+        if mode == "project" and verified_connections:
+            response = replace_connections_section(response, verified_connections)
+
+        return limit_text_by_tokens(response, OUTPUT_TOKEN_LIMIT)
 
     except Exception as e:
         print(f"[ERROR] Failed to generate answer: {e}")
@@ -585,6 +882,7 @@ def format_response(response: str) -> str:
         return "[No response]"
 
     response = response.strip()
+    response = re.sub(r"\bHC-SR4\b", "HC-SR04", response)
 
     # Remove excessive whitespace
     lines = [line.rstrip() for line in response.split("\n")]
@@ -610,9 +908,18 @@ def process_query(
 
     # Format context
     context = format_context(documents, metadatas)
+    verified_connections = verified_connections_from_sources(metadatas)
+    verified_components = verified_components_from_sources(metadatas)
 
     # Generate answer (with conversation history if provided)
-    answer = generate_answer(llm, query, context, history=history)
+    answer = generate_answer(
+        llm,
+        query,
+        context,
+        history=history,
+        verified_connections=verified_connections,
+        verified_components=verified_components,
+    )
 
     # Format response
     formatted_answer = format_response(answer)
@@ -631,6 +938,8 @@ def process_query(
         "has_useful_context": context_is_useful(context),
         "mode": detect_query_mode(query),
         "language": detect_language(query),
+        "verified_connections": verified_connections,
+        "verified_components": verified_components,
     }
 
     return formatted_answer, metadata

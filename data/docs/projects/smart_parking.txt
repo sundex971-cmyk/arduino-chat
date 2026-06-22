@@ -80,12 +80,16 @@ ECHO → D7
 
 Green LED:
 
-D9
+Anode → 220 Ohm resistor → D9
+
+Cathode → GND
 
 
 Red LED:
 
-D10
+Anode → 220 Ohm resistor → D10
+
+Cathode → GND
 
 
 
